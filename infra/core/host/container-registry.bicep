@@ -24,7 +24,6 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   sku: sku
   properties: {
     adminUserEnabled: adminUserEnabled
-    anonymousPullEnabled: anonymousPullEnabled
     dataEndpointEnabled: dataEndpointEnabled
     encryption: encryption
     networkRuleBypassOptions: networkRuleBypassOptions

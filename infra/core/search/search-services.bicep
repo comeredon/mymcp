@@ -31,7 +31,6 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
   properties: {
     authOptions: authOptions
     disableLocalAuth: disableLocalAuth
-    disabledDataExfiltrationOptions: disabledDataExfiltrationOptions
     encryptionWithCmk: encryptionWithCmk
     hostingMode: hostingMode
     networkRuleSet: networkRuleSet

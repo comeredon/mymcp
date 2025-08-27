@@ -9,9 +9,6 @@ param environmentName string
 @description('Primary location for all resources')
 param location string = 'swedencentral'
 
-@description('Id of the user or app to assign application roles')
-param principalId string = ''
-
 // Optional parameters
 @description('Azure AI Search service name')
 param searchServiceName string = ''
@@ -19,6 +16,9 @@ param searchServiceName string = ''
 @description('Azure AI Search SKU')
 @allowed(['free', 'basic', 'standard', 'standard2', 'standard3', 'storage_optimized_l1', 'storage_optimized_l2'])
 param searchServiceSku string = 'standard'
+
+@description('Name of the search index containing your PDF documents')
+param searchIndexName string = 'pdf-index'
 
 @description('Container app CPU and memory configuration')
 param containerAppConfig object = {
@@ -64,17 +64,9 @@ module logAnalytics 'core/monitor/loganalytics.bicep' = {
   }
 }
 
-// Azure AI Search service
-module searchService 'core/search/search-services.bicep' = {
-  name: 'search-service'
-  params: {
-    name: !empty(searchServiceName) ? searchServiceName : '${abbrs.searchSearchServices}${resourceToken}'
-    location: location
-    tags: tags
-    sku: {
-      name: searchServiceSku
-    }
-  }
+// Azure AI Search service (existing)
+resource existingSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
+  name: !empty(searchServiceName) ? searchServiceName : 'mcpserver-search'
 }
 
 // User assigned managed identity for container app
@@ -102,11 +94,11 @@ module mcpServer 'core/host/container-app.bicep' = {
     secrets: [
       {
         name: 'search-endpoint'
-        value: searchService.outputs.endpoint
+        value: 'https://${existingSearchService.name}.search.windows.net/'
       }
       {
         name: 'search-key'
-        value: searchService.outputs.adminKey
+        value: existingSearchService.listAdminKeys().primaryKey
       }
       {
         name: 'server-api-key'
@@ -124,7 +116,7 @@ module mcpServer 'core/host/container-app.bicep' = {
       }
       {
         name: 'SEARCH_INDEX'
-        value: 'pdf-index' // You may want to parameterize this
+        value: searchIndexName
       }
       {
         name: 'SERVER_API_KEY'
@@ -177,8 +169,8 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppsEnvironment.o
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
 
-output SEARCH_SERVICE_NAME string = searchService.outputs.name
-output SEARCH_ENDPOINT string = searchService.outputs.endpoint
+output SEARCH_SERVICE_NAME string = existingSearchService.name
+output SEARCH_ENDPOINT string = 'https://${existingSearchService.name}.search.windows.net/'
 
 output MCP_SERVER_URI string = mcpServer.outputs.uri
 output MCP_SERVER_API_KEY string = 'changeme-${uniqueString(resourceToken)}'

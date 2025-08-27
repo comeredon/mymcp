@@ -1,12 +1,12 @@
 {
   "name": "mcp-azure-pdf",
   "version": "1.0.0",
-  "type": "module",
-  "main": "src/server.js",
+  "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "start": "node src/server.js",
-    "dev": "tsc && node src/server.js",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js",
+    "dev-local": "pwsh -File dev-local.ps1",
     "clean": "rimraf dist"
   },
   "dependencies": {
