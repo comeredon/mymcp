@@ -2,9 +2,9 @@
   "mcpServers": {
     "azure-pdf-search": {
       "type": "http",
-      "url": "https://ca-mcp-ojyyemcqhgob2.agreeablestone-e6b128d0.swedencentral.azurecontainerapps.io/api/tools",
+      "url": "${MCP_SERVER_URL}",
       "headers": {
-        "x-api-key": "YzUyZjUwM2MtOWQzYi00Mzg0LTljNzgtNGNhN2QwYWUwMmI4OTdjNjcyOTktYWZjMy00YWMxLTg1M2YtNDUyMDA0YWIwZjht",
+        "x-api-key": "${MCP_API_KEY}",
         "Content-Type": "application/json"
       },
       "tools": ["search", "fetch"]
