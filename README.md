@@ -1,4 +1,31 @@
-# MCP Azure PDF Knowledge Server
+# MCP Azure PDF Know- 🐳 **Container Ready**: Optimized for Azure Container Apps deployment
+
+## GitHub Copilot Integration
+
+Your MCP server is fully compatible with GitHub Copilot! The repository includes a `mcp.json` configuration file that GitHub Copilot can automatically detect and use.
+
+### Setup
+
+1. **MCP Configuration**: The `mcp.json` file in the repository root contains the complete setup
+2. **Automatic Detection**: GitHub Copilot will automatically detect and use your MCP server
+3. **Ready to Use**: Ask questions about your PL/I documentation directly in GitHub Copilot Chat
+
+### Usage Examples
+
+```
+@copilot Search for "V6R1 enhancements" in the PL/I documentation
+@copilot What are the compiler options for FIXED DECIMAL optimization?
+@copilot Find information about INLIST and INARRAY built-in functions
+@copilot Is this PL/I code correct: DCL file-reference FILE STREAM
+@copilot Look up "ORDINALNAME" built-in function usage
+```
+
+### Available Tools
+
+- **🔍 Search Tool**: Semantic search across your indexed PDF documentation
+- **📄 Fetch Tool**: Retrieve specific document content and pages
+
+With this integration, GitHub Copilot can provide accurate answers based on your PL/I documentation!
 
 A production-ready REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Deployed as an Azure Container App with full GitHub Copilot integration support.
 
