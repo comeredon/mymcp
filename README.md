@@ -1,5 +1,25 @@
 # MCP Azure PDF Knowledge Server
 
+A production-ready REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Deployed as an Azure Container App with full GitHub Copilot integration support.
+
+## ✅ Status: **FULLY FUNCTIONAL**
+
+The MCP server is deployed and operational with:
+- ✅ **Working Search**: Returns actual document content with correct field mapping
+- ✅ **GitHub Copilot Ready**: Provides structured responses for AI integration  
+- ✅ **Production Deployed**: Running on Azure Container Apps
+- ✅ **Authenticated Access**: Secure API key authentication
+
+## Features
+
+- 🔍 **Semantic Search**: Search across indexed PDF documents using Azure AI Search
+- 📄 **Document Retrieval**: Fetch full text or specific pages from PDF documents
+- 🤖 **GitHub Copilot Integration**: MCP-compatible endpoints for AI assistance
+- 🌐 **RESTful API**: Simple HTTP endpoints for integration
+- 🔐 **Authentication**: API key-based authentication for security
+- 📊 **Health Monitoring**: Built-in health check endpoint
+- 🐳 **Container Ready**: Optimized for Azure Container Apps deploymentPDF Knowledge Server
+
 A REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Designed to run as an Azure Container App.
 
 ## Features
@@ -58,9 +78,59 @@ GET /health
 ```
 Returns service health status (no authentication required).
 
-### MCP Tools
+### Search Endpoint  
+```
+POST /api/search
+Headers: x-api-key: YOUR_API_KEY
+Content-Type: application/json
 
-The server provides two main tools:
+{
+  "query": "your search query",
+  "top": 5
+}
+```
+
+### Tools Endpoint (GitHub Copilot Integration)
+```
+POST /api/tools  
+Headers: x-api-key: YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "tool": "search",
+  "arguments": {
+    "query": "your search query", 
+    "top": 5
+  }
+}
+```
+
+### Fetch Endpoint
+```
+POST /api/fetch
+Headers: x-api-key: YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "id": "document-id",
+  "pages": [1, 2, 3]
+}
+```
+
+## Working Example
+
+**Question:** "What are the enhancements from V6R1?"
+
+**Response:** Returns comprehensive information about PL/I V6R1 enhancements including:
+- Performance improvements for FIXED DECIMAL and PICTURE variables
+- New hardware instruction utilization
+- Enhanced compiler options (BASE64, HEXDECODE, NOPUT, DCLS suboptions)
+- Better storage problem detection
+- ZLIB compression samples
+
+## MCP Tools
+
+The server provides GitHub Copilot-compatible tools:
 
 #### 1. Search Tool
 Search for relevant PDF content:
