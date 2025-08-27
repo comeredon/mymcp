@@ -13,6 +13,7 @@ interface SearchDocument {
   file_name?: string;
   chunk?: string;
   content?: string;
+  content_text?: string;
   source_url?: string;
   page_number?: number;
   docId?: string;
@@ -86,7 +87,7 @@ app.post('/api/search', async (req: Request, res: Response) => {
       items.push({
         id: doc.id,
         title: doc.title ?? doc.file_name ?? doc.id,
-        text: doc.chunk ?? doc.content ?? "",
+        text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
         url: doc.source_url ?? null,
         score: r.score
       });
@@ -127,7 +128,7 @@ app.post('/api/fetch', async (req: Request, res: Response) => {
     let text = chunks
       .filter(c => !pages || pages.includes(Number(c.page_number ?? 0)))
       .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
-      .map(c => c.chunk ?? c.content ?? "")
+      .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
       .join("\n\n");
 
     res.json({ text, chunks: chunks.length });
@@ -158,7 +159,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           searchItems.push({
             id: doc.id,
             title: doc.title ?? doc.file_name ?? doc.id,
-            text: doc.chunk ?? doc.content ?? "",
+            text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
             url: doc.source_url ?? null,
             score: r.score
           });
@@ -184,7 +185,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         let text = fetchChunks
           .filter(c => !args.pages || args.pages.includes(Number(c.page_number ?? 0)))
           .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
-          .map(c => c.chunk ?? c.content ?? "")
+          .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
           .join("\n\n");
 
         res.json({ 

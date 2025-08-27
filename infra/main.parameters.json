@@ -8,8 +8,11 @@
     "location": {
       "value": "swedencentral"
     },
-    "principalId": {
-      "value": "${AZURE_PRINCIPAL_ID}"
+    "searchServiceName": {
+      "value": "mcpserver-search"
+    },
+    "searchIndexName": {
+      "value": "multimodal-rag-1756212867317"
     }
   }
 }

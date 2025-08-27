@@ -11,61 +11,44 @@ A REST API server that connects to Azure AI Search to provide semantic search an
 - 📊 **Health Monitoring**: Built-in health check endpoint
 - 🐳 **Container Ready**: Optimized for Azure Container Apps deployment
 
-## Architecture
-
-- **MCP Server**: Express.js application with MCP SDK
-- **Azure AI Search**: Semantic search over PDF content
-- **Azure Container Apps**: Scalable container hosting
-- **Managed Identity**: Secure access to Azure services
-
 ## Quick Start
 
-### Prerequisites
+### 1. Setup Environment Variables
 
-- Node.js 20+
-- Azure subscription
-- Azure CLI
-- Azure Developer CLI (azd)
+```powershell
+# Copy environment template
+copy .env.example .env.local
 
-### Local Development
+# Edit .env.local with your actual values
+# - SEARCH_ENDPOINT: Your Azure AI Search URL
+# - SEARCH_KEY: Your search admin key  
+# - SEARCH_INDEX: Your PDF index name
+# - SERVER_API_KEY: Your custom API key
+```
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+### 2. Validate Configuration
 
-2. **Set environment variables**:
-   ```bash
-   export SEARCH_ENDPOINT="https://your-search-service.search.windows.net/"
-   export SEARCH_KEY="your-search-admin-key"
-   export SEARCH_INDEX="pdf-index"
-   export SERVER_API_KEY="your-api-key"
-   ```
+```powershell
+# Check your environment setup
+./validate-env.ps1
+```
 
-3. **Build and run**:
-   ```bash
-   npm run build
-   npm start
-   ```
+### 3. Deploy to Azure
 
-### Azure Deployment
+```powershell
+# Deploy with your environment variables
+./deploy-with-env.ps1
 
-1. **Initialize AZD**:
-   ```bash
-   azd auth login
-   azd init
-   ```
+# Or test first with dry run
+./deploy-with-env.ps1 -DryRun
+```
 
-2. **Deploy to Azure**:
-   ```bash
-   azd up
-   ```
+### 4. Local Development
 
-This will:
-- Create all required Azure resources (Container Apps, AI Search, Container Registry, etc.)
-- Build and push the container image
-- Deploy the application
-- Configure security and networking
+```powershell
+# Run locally with your environment
+npm run dev-local
+```
 
 ## API Endpoints
 
@@ -107,13 +90,24 @@ Retrieve full document or specific pages:
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `SEARCH_ENDPOINT` | Azure AI Search service endpoint | Yes |
-| `SEARCH_KEY` | Azure AI Search admin key | Yes |
-| `SEARCH_INDEX` | Search index name | Yes |
-| `SERVER_API_KEY` | API key for client authentication | Yes |
-| `PORT` | Server port (default: 8080) | No |
+All environment variables are managed locally in `.env.local` and automatically deployed to Azure Container Apps.
+
+**Setup Process:**
+1. **Copy template**: `copy .env.example .env.local`
+2. **Edit values**: Fill in your actual Azure AI Search details  
+3. **Validate**: `./validate-env.ps1`
+4. **Deploy**: `./deploy-with-env.ps1`
+
+**Required Variables:**
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SEARCH_ENDPOINT` | Azure AI Search service URL | `https://mysearch.search.windows.net/` |
+| `SEARCH_KEY` | Azure AI Search admin key | `1234567890ABCDEF...` |
+| `SEARCH_INDEX` | Name of your PDF search index | `pdf-documents` |
+| `SERVER_API_KEY` | API key for client authentication | `my-secure-api-key-123` |
+
+📖 **See [ENV-SETUP.md](ENV-SETUP.md) for complete configuration guide.**
 
 ### Azure Resources
 
