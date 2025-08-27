@@ -146,16 +146,212 @@ app.post('/api/tools', async (req: Request, res: Response) => {
   try {
     console.log('Tools request body:', JSON.stringify(req.body, null, 2));
     
-    // Handle both MCP protocol and custom format
+    // Handle MCP protocol initialization and handshake
+    if (req.body.method === 'initialize') {
+      console.log('Handling MCP initialize method');
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result: {
+          protocolVersion: "2025-06-18",
+          capabilities: {
+            tools: {},
+            logging: {}
+          },
+          serverInfo: {
+            name: "azure-pdf-search",
+            version: "1.0.0"
+          }
+        }
+      });
+    }
+
+    // Handle MCP initialized notification
+    if (req.body.method === 'notifications/initialized') {
+      console.log('Handling MCP initialized notification');
+      return res.status(200).send(); // Just acknowledge with 200 OK
+    }
+
+    // Handle tools/list method
+    if (req.body.method === 'tools/list') {
+      console.log('Handling MCP tools/list method');
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result: {
+          tools: [
+            {
+              name: "search",
+              description: "Search across indexed PDF documents using semantic search",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description: "The search query to find relevant content"
+                  },
+                  top: {
+                    type: "number",
+                    description: "Number of results to return (default: 5)",
+                    default: 5
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            {
+              name: "fetch",
+              description: "Retrieve full document content or specific pages",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                    description: "The document ID to fetch"
+                  },
+                  pages: {
+                    type: "array",
+                    items: { type: "number" },
+                    description: "Specific page numbers to retrieve (optional)"
+                  }
+                },
+                required: ["id"]
+              }
+            }
+          ]
+        }
+      });
+    }
+
+    // Handle tools/call method (the main tool execution)
+    if (req.body.method === 'tools/call') {
+      const toolName = req.body.params?.name;
+      const args = req.body.params?.arguments || {};
+      
+      console.log(`MCP tools/call - Tool: ${toolName}, Args:`, args);
+
+      if (!toolName) {
+        return res.status(400).json({
+          jsonrpc: "2.0",
+          id: req.body.id,
+          error: {
+            code: -32602,
+            message: "Tool name is required in params.name"
+          }
+        });
+      }
+
+      switch (toolName.toLowerCase()) {
+        case 'search':
+          const query = args.query || '';
+          const top = args.top || 5;
+          
+          if (!query) {
+            return res.status(400).json({
+              jsonrpc: "2.0",
+              id: req.body.id,
+              error: {
+                code: -32602,
+                message: "Search query is required"
+              }
+            });
+          }
+
+          const searchResults = await searchClient.search(query, {
+            top: Math.min(top, 20),
+            includeTotalCount: true,
+          });
+          
+          const searchItems: any[] = [];
+          for await (const r of searchResults.results) {
+            const doc = r.document as SearchDocument;
+            searchItems.push({
+              id: doc.id,
+              title: doc.title ?? doc.file_name ?? doc.id,
+              text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
+              url: doc.source_url ?? null,
+              score: r.score
+            });
+          }
+
+          return res.json({
+            jsonrpc: "2.0",
+            id: req.body.id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: `Found ${searchItems.length} results for "${query}":\n\n` +
+                        searchItems.map((item, index) => 
+                          `${index + 1}. ${item.title}\n${item.text.substring(0, 500)}...\n`
+                        ).join('\n')
+                }
+              ]
+            }
+          });
+          
+        case 'fetch':
+          const docId = args.id || '';
+          const pages = args.pages || [];
+
+          if (!docId) {
+            return res.status(400).json({
+              jsonrpc: "2.0",
+              id: req.body.id,
+              error: {
+                code: -32602,
+                message: "Document ID is required"
+              }
+            });
+          }
+
+          const filter = `docId eq '${docId.replace(/'/g, "''")}'`;
+          const fetchResults = await searchClient.search("*", {
+            filter,
+            top: 1000
+          });
+
+          const fetchChunks: SearchDocument[] = [];
+          for await (const r of fetchResults.results) {
+            fetchChunks.push(r.document as SearchDocument);
+          }
+
+          let text = fetchChunks
+            .filter(c => !pages.length || pages.includes(Number(c.page_number ?? 0)))
+            .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
+            .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
+            .join("\n\n");
+
+          return res.json({
+            jsonrpc: "2.0",
+            id: req.body.id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: text || "No content found for the specified document ID."
+                }
+              ]
+            }
+          });
+          
+        default:
+          return res.status(400).json({
+            jsonrpc: "2.0", 
+            id: req.body.id,
+            error: {
+              code: -32601,
+              message: `Unknown tool: ${toolName}. Available tools: search, fetch`
+            }
+          });
+      }
+    }
+
+    // Legacy format support (for backward compatibility)
     let tool: string;
     let args: any;
     
-    // Check if it's MCP protocol format
-    if (req.body.method) {
-      // MCP protocol format: { method: "tools/call", params: { name: "search", arguments: {...} } }
-      tool = req.body.params?.name;
-      args = req.body.params?.arguments || {};
-    } else if (req.body.tool) {
+    if (req.body.tool) {
       // Custom format: { tool: "search", arguments: {...} }
       tool = req.body.tool;
       args = req.body.arguments || {};
@@ -163,27 +359,20 @@ app.post('/api/tools', async (req: Request, res: Response) => {
       // Alternative format: { name: "search", arguments: {...} }
       tool = req.body.name;
       args = req.body.arguments || {};
-    } else {
+    } else if (req.body.query) {
       // Default to search if no tool specified but query provided
-      if (req.body.query) {
-        tool = 'search';
-        args = { query: req.body.query, top: req.body.top || 5 };
-      } else {
-        return res.status(400).json({ 
-          error: 'Missing tool specification. Expected formats: {method, params} or {tool, arguments} or {name, arguments}',
-          received: req.body
-        });
-      }
-    }
-
-    console.log(`Tool: ${tool}, Args:`, args);
-
-    if (!tool) {
+      tool = 'search';
+      args = { query: req.body.query, top: req.body.top || 5 };
+    } else {
       return res.status(400).json({ 
-        error: `Tool name is undefined. Request body: ${JSON.stringify(req.body)}` 
+        error: 'Unsupported request format. Expected MCP protocol format or legacy format.',
+        received: req.body
       });
     }
 
+    console.log(`Legacy format - Tool: ${tool}, Args:`, args);
+
+    // Handle legacy format requests
     switch (tool.toLowerCase()) {
       case 'search':
         const query = args.query || args.q || '';
@@ -210,23 +399,6 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           });
         }
 
-        // Return in MCP format if the request was MCP protocol
-        if (req.body.method) {
-          return res.json({
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  query: query,
-                  total: searchItems.length,
-                  results: searchItems
-                }, null, 2)
-              }
-            ]
-          });
-        }
-
-        // Return in custom format
         return res.json({ 
           query: query,
           total: searchItems.length,
@@ -265,19 +437,6 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           pages: pages
         };
 
-        // Return in MCP format if the request was MCP protocol
-        if (req.body.method) {
-          return res.json({
-            content: [
-              {
-                type: "text", 
-                text: JSON.stringify(fetchResult, null, 2)
-              }
-            ]
-          });
-        }
-
-        // Return in custom format
         return res.json(fetchResult);
         
       default:
@@ -288,6 +447,21 @@ app.post('/api/tools', async (req: Request, res: Response) => {
     }
   } catch (error) {
     console.error('Tool execution error:', error);
+    
+    // Return MCP error format if it's an MCP request
+    if (req.body.jsonrpc === "2.0") {
+      return res.status(500).json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
+    
+    // Return legacy error format
     res.status(500).json({ 
       error: 'Tool execution failed', 
       message: error instanceof Error ? error.message : 'Unknown error'
