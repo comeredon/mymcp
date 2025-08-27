@@ -6,9 +6,31 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
 
 ### Setup
 
-1. **MCP Configuration**: The `mcp.json` file in the repository root contains the complete setup
-2. **Automatic Detection**: GitHub Copilot will automatically detect and use your MCP server
-3. **Ready to Use**: Ask questions about your PL/I documentation directly in GitHub Copilot Chat
+1. **Environment Variables**: Set these in your environment:
+   ```bash
+   MCP_SERVER_URL=https://REDACTED_CONTAINER_APP_URL/api/tools
+   MCP_API_KEY=REDACTED_API_KEY
+   ```
+
+2. **MCP Configuration**: The `mcp.json` file uses environment variables for security:
+   ```json
+   {
+     "mcpServers": {
+       "azure-pdf-search": {
+         "type": "http",
+         "url": "${MCP_SERVER_URL}",
+         "headers": {
+           "x-api-key": "${MCP_API_KEY}",
+           "Content-Type": "application/json"
+         },
+         "tools": ["search", "fetch"]
+       }
+     }
+   }
+   ```
+
+3. **Automatic Detection**: GitHub Copilot will automatically detect and use your MCP server
+4. **Ready to Use**: Ask questions about your PL/I documentation directly in GitHub Copilot Chat
 
 ### Usage Examples
 

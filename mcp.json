@@ -2,9 +2,9 @@
   "mcpServers": {
     "azure-pdf-search": {
       "type": "http",
-      "url": "https://REDACTED_CONTAINER_APP_URL/api/tools",
+      "url": "${MCP_SERVER_URL}",
       "headers": {
-        "x-api-key": "REDACTED_API_KEY",
+        "x-api-key": "${MCP_API_KEY}",
         "Content-Type": "application/json"
       },
       "tools": ["search", "fetch"]
