@@ -16,7 +16,7 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
    ```json
    {
      "mcpServers": {
-       "azure-pdf-search": {
+       "custom-pli-mcp": {
          "type": "http",
          "url": "${MCP_SERVER_URL}",
          "headers": {
