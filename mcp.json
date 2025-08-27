@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "azure-pdf-search": {
+    "custom-pli-mcp": {
       "type": "http",
       "url": "${MCP_SERVER_URL}",
       "headers": {

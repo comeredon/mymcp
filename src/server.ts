@@ -159,7 +159,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
             logging: {}
           },
           serverInfo: {
-            name: "azure-pdf-search",
+            name: "custom-pli-mcp",
             version: "1.0.0"
           }
         }
