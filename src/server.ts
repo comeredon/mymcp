@@ -22,11 +22,10 @@ interface SearchDocument {
 const {
   SEARCH_ENDPOINT,
   SEARCH_KEY,
-  SEARCH_INDEX,
-  SERVER_API_KEY // API key for clients (sent as header)
+  SEARCH_INDEX
 } = process.env;
 
-if (!SEARCH_ENDPOINT || !SEARCH_KEY || !SEARCH_INDEX || !SERVER_API_KEY) {
+if (!SEARCH_ENDPOINT || !SEARCH_KEY || !SEARCH_INDEX) {
   throw new Error("Missing required env vars.");
 }
 
@@ -57,13 +56,6 @@ app.get('/health', async (req: Request, res: Response) => {
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-});
-
-// API key authentication for MCP endpoints
-app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-  const key = req.header("x-api-key");
-  if (key !== SERVER_API_KEY) return res.status(401).send("Unauthorized");
-  next();
 });
 
 // Search endpoint - semantic search over indexed PDFs

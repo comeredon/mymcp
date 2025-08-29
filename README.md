@@ -9,7 +9,6 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
 1. **Environment Variables**: Set these in your environment:
    ```bash
    MCP_SERVER_URL=https://ca-mcp-ojyyemcqhgob2.agreeablestone-e6b128d0.swedencentral.azurecontainerapps.io/api/tools
-   MCP_API_KEY=YzUyZjUwM2MtOWQzYi00Mzg0LTljNzgtNGNhN2QwYWUwMmI4OTdjNjcyOTktYWZjMy00YWMxLTg1M2YtNDUyMDA0YWIwZjht
    ```
 
 2. **MCP Configuration**: The `mcp.json` file uses environment variables for security:
@@ -20,7 +19,6 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
          "type": "http",
          "url": "${MCP_SERVER_URL}",
          "headers": {
-           "x-api-key": "${MCP_API_KEY}",
            "Content-Type": "application/json"
          },
          "tools": ["search", "fetch"]
