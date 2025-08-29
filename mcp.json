@@ -2,7 +2,7 @@
   "mcpServers": {
     "custom-pli-mcp": {
       "type": "http",
-      "url": "${MCP_SERVER_URL}",
+      "url": "https://ca-mcp-ojyyemcqhgob2.agreeablestone-e6b128d0.swedencentral.azurecontainerapps.io/api/tools",
       "headers": {
         "Content-Type": "application/json"
       },
