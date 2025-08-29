@@ -164,6 +164,22 @@ app.post('/api/tools', async (req: Request, res: Response) => {
       return res.status(200).send(); // Just acknowledge with 200 OK
     }
 
+    // Handle logging/setLevel method
+    if (req.body.method === 'logging/setLevel') {
+      console.log('Handling MCP logging/setLevel method');
+      return res.json({
+        jsonrpc: "2.0",
+        id: req.body.id,
+        result: {}
+      });
+    }
+
+    // Handle any other logging notifications
+    if (req.body.method && req.body.method.startsWith('notifications/')) {
+      console.log(`Handling MCP notification: ${req.body.method}`);
+      return res.status(200).send(); // Just acknowledge with 200 OK
+    }
+
     // Handle tools/list method
     if (req.body.method === 'tools/list') {
       console.log('Handling MCP tools/list method');
