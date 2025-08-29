@@ -4,7 +4,6 @@
       "type": "http",
       "url": "${MCP_SERVER_URL}",
       "headers": {
-        "x-api-key": "${MCP_API_KEY}",
         "Content-Type": "application/json"
       },
       "tools": ["search", "fetch"]
