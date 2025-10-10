@@ -1,190 +1,173 @@
-# Deployment Guide for PDF Knowledge Base MCP Server
+# Deployment Guide for MCP Azure PDF Server
 
-This guide walks you through deploying your MCP server that provides AI Search capabilities over your indexed PDF documents to Azure Container Apps.
+This guide walks you through deploying your MCP server to Azure. The deployment creates all necessary resources automatically - no pre-deployment setup required!
 
 ## 📋 Prerequisites
 
-### Before Deployment:
-1. **PDF Documents Indexed**: Your PDF files should already be indexed in Azure AI Search
-2. **Search Index Name**: Know the name of your search index (default: `pdf-index`)
-3. **Azure Access**: Azure subscription with contributor access
-4. **Tools Installed**:
-   - Azure CLI (`az --version`)
-   - Azure Developer CLI (`azd --version`) 
-   - Docker Desktop (running)
+**Required Tools:**
+- Azure CLI (`az --version`)
+- Docker Desktop (running)
+- Node.js 18+ (`node --version`)
 
-## 🏗️ Environment Variables (Automatically Configured)
+**Azure Requirements:**
+- Azure subscription with contributor access
+- Logged in to Azure CLI (`az login`)
 
-The deployment automatically configures these environment variables in your Azure Container App:
+## 🚀 Simple Deployment
 
-### **Secure Variables (Stored as Secrets):**
-- `SEARCH_ENDPOINT` → Your AI Search service endpoint
-- `SEARCH_KEY` → AI Search admin key  
-- `SERVER_API_KEY` → Auto-generated unique API key
-
-### **Configuration Variables:**
-- `SEARCH_INDEX` → Your PDF index name (configurable)
-- `PORT` → Server port (8080)
-
-## 🚀 Deployment Options
-
-### Option 1: Deploy to Existing Resource Group (Recommended)
+### One-Command Deployment
 
 ```powershell
-# Navigate to your project
-cd "C:\Users\comeredon\OneDrive - Microsoft\Desktop\mcp-azure-pdf"
-
-# Run deployment script
+# Deploy with defaults
 ./deploy.ps1
 ```
 
-This script will:
-- ✅ Use your existing `mcpserver` resource group in `swedencentral`
-- ✅ Create AI Search service (if needed)
-- ✅ Create Container App Environment
-- ✅ Build and push container image
-- ✅ Deploy your MCP server
+This creates:
+- ✅ Resource group (if not exists)
+- ✅ Azure AI Search service (new)
+- ✅ Container Apps Environment
+- ✅ Container Registry
+- ✅ Log Analytics Workspace
+- ✅ MCP Server Container App
 
-### Option 2: Deploy with Azure Developer CLI
+### Customized Deployment
 
-```bash
-# Initialize AZD (first time only)
-azd init
-
-# Deploy everything
-azd up
+```powershell
+# Deploy with custom settings
+./deploy.ps1 `
+  -ResourceGroupName "my-mcp-rg" `
+  -Location "eastus" `
+  -SearchIndexName "my-pdf-index" `
+  -ApiKey "my-custom-api-key"
 ```
 
-## ⚙️ Customization
+**Parameters:**
+- `ResourceGroupName`: Name for your resource group (default: `mcp-server-rg`)
+- `Location`: Azure region (default: `swedencentral`)
+- `EnvironmentName`: Environment identifier (default: `mcp`)
+- `SearchIndexName`: Name for your search index (default: `pdf-index`)
+- `ApiKey`: Custom API key (default: auto-generated)
 
-### Change Your Search Index Name
+## ⚙️ What Gets Created
 
-Edit `infra/main.parameters.json`:
-```json
-{
-  "parameters": {
-    "searchIndexName": {
-      "value": "your-actual-index-name"
-    }
-  }
-}
+The deployment creates these Azure resources:
+
+1. **Resource Group**: Container for all resources
+2. **Azure AI Search Service**: For PDF document indexing and search
+   - SKU: Basic (can be changed in infra/main.bicep)
+   - Semantic search: Free tier enabled
+3. **Container Apps Environment**: Hosts the MCP server
+4. **Container Registry**: Stores Docker images
+5. **Log Analytics Workspace**: Application monitoring
+6. **Managed Identity**: Secure service-to-service authentication
+7. **MCP Server Container App**: Your deployed application
+
+## 📝 After Deployment
+
+### 1. Index Your PDF Documents
+
+The deployment creates an Azure AI Search service, but you need to populate it with your PDF documents:
+
+**Using Azure Portal:**
+1. Go to Azure Portal → Search Service
+2. Click "Import data" wizard
+3. Connect your PDF data source (Azure Blob Storage, etc.)
+4. Use Azure AI Document Intelligence for PDF extraction
+5. Create index with the name you specified (default: `pdf-index`)
+
+**Required Index Schema:**
+Your index should include these fields:
+- `id`: Document identifier (string, key)
+- `content` or `chunk`: Text content (string, searchable)
+- `metadata_storage_name`: File name (optional)
+- `metadata_storage_path`: File path (optional)
+
+### 2. Test Your Deployment
+
+Use the values from the deployment output:
+
+```powershell
+# Health check (no auth required)
+curl https://your-mcp-server-url/health
+
+# Search endpoint (requires API key)
+curl -X POST https://your-mcp-server-url/api/search `
+  -H "x-api-key: YOUR_API_KEY" `
+  -H "Content-Type: application/json" `
+  -d '{"query": "test search", "top": 5}'
 ```
 
-### Adjust Container Resources
+### 3. Configure Your Client
 
-Edit `infra/main.parameters.json`:
+Use the deployment outputs to configure your GitHub Copilot or other MCP client:
+
 ```json
 {
-  "parameters": {
-    "containerAppConfig": {
-      "value": {
-        "cpu": "0.5",
-        "memory": "1Gi", 
-        "minReplicas": 1,
-        "maxReplicas": 20
+  "mcpServers": {
+    "pdf-server": {
+      "type": "http",
+      "url": "https://your-mcp-server-url/api/tools",
+      "headers": {
+        "x-api-key": "YOUR_API_KEY"
       }
     }
   }
 }
 ```
 
-## 🔍 Testing Your Deployment
+## 📊 Monitoring
 
-### 1. Health Check
-```bash
-curl https://your-container-app-url.azurecontainerapps.io/health
-```
-
-### 2. Search Your PDFs
-```bash
-curl -X POST https://your-container-app-url.azurecontainerapps.io/api/search \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "your search term", "top": 5}'
-```
-
-### 3. Fetch Document Content
-```bash
-curl -X POST https://your-container-app-url.azurecontainerapps.io/api/fetch \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"id": "document-id"}'
-```
-
-## 📊 Finding Your API Key
-
-After deployment, get your auto-generated API key:
-
-```bash
-# Using Azure CLI
-az containerapp secret show \
-  --name ca-mcp-<your-token> \
-  --resource-group mcpserver \
-  --secret-name server-api-key
-```
-
-## 🔧 Post-Deployment Configuration
-
-### Update API Key (Optional)
-```bash
-az containerapp secret set \
-  --name ca-mcp-<your-token> \
-  --resource-group mcpserver \
-  --secrets server-api-key="your-custom-key"
-```
-
-### Update Search Index
-```bash
-az containerapp update \
-  --name ca-mcp-<your-token> \
-  --resource-group mcpserver \
-  --set-env-vars SEARCH_INDEX="new-index-name"
-```
-
-## 📈 Monitoring
-
-### View Logs
-```bash
-# Real-time logs
-azd logs
-
-# Or with Azure CLI
-az containerapp logs show \
-  --name ca-mcp-<your-token> \
-  --resource-group mcpserver \
+### View Application Logs
+```powershell
+# Get logs from Azure Portal or CLI
+az containerapp logs show `
+  --name <container-app-name> `
+  --resource-group <resource-group-name> `
   --follow
 ```
 
 ### Monitor Performance
-- **Azure Portal**: Container Apps → Metrics
-- **Log Analytics**: Query application logs
-- **Health Check**: Monitor `/health` endpoint
+- **Azure Portal**: Navigate to Container Apps → Metrics
+- **Log Analytics**: Query application logs and metrics
+- **Health Endpoint**: Monitor `/health` for service availability
 
 ## 🛠️ Troubleshooting
 
-### Common Issues:
+### Common Issues
 
-1. **Search Index Not Found**
-   - Verify `SEARCH_INDEX` environment variable matches your actual index name
-   - Check if your PDF documents are properly indexed
+**1. Search returns no results**
+- Verify your search index is created and populated
+- Check index name matches deployment parameter
+- Test search directly in Azure Portal
 
-2. **Authentication Errors**
-   - Ensure you're using the correct API key from Container App secrets
-   - Verify `x-api-key` header is included in requests
+**2. Container fails to start**
+- Check container logs for error messages
+- Verify Docker image built successfully
+- Ensure all environment variables are set
 
-3. **Container Startup Issues**
-   - Check Container App logs for startup errors
-   - Verify all environment variables are properly set
+**3. Authentication fails**
+- Use the API key from deployment output
+- Verify `x-api-key` header is included in requests
+- Check key hasn't been changed in Azure Portal
 
-4. **Search Results Empty**
-   - Test your search index directly in Azure Portal
-   - Verify document schema matches expected fields (id, content/chunk, etc.)
+**4. Can't access MCP server URL**
+- Verify Container App is running in Azure Portal
+- Check ingress is enabled and set to external
+- Wait a few minutes after deployment for DNS propagation
+
+### Getting Help
+
+Check logs for detailed error messages:
+```powershell
+az containerapp logs show --name <app-name> --resource-group <rg-name> --tail 50
+```
 
 ## 🎯 Next Steps
 
-1. **Integrate with Client**: Use the REST API endpoints in your applications
-2. **Scale as Needed**: Adjust replica counts based on usage
-3. **Monitor Usage**: Set up alerts for performance and errors
-4. **Security Review**: Consider additional authentication if needed
+1. **Index Your PDFs**: Populate Azure AI Search with your documents
+2. **Test Thoroughly**: Verify search results match expectations
+3. **Integrate Clients**: Configure GitHub Copilot or other MCP clients
+4. **Monitor Usage**: Set up alerts and review logs regularly
+5. **Scale as Needed**: Adjust container resources based on usage
 
-Your PDF knowledge base MCP server is now ready to serve AI-powered search over your indexed documents! 🎉
+Your MCP server is now deployed and ready to serve AI-powered search! 🎉
