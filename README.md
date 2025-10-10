@@ -80,40 +80,60 @@ A REST API server that connects to Azure AI Search to provide semantic search an
 
 ## Quick Start
 
-### 1. Setup Environment Variables
+### 1. Prerequisites
+
+- Azure CLI (`az --version`)
+- Docker Desktop (running)
+- Node.js 18+ (`node --version`)
+
+### 2. Deploy to Azure
 
 ```powershell
-# Copy environment template
+# Login to Azure
+az login
+
+# Deploy everything (creates all resources)
+./deploy.ps1
+
+# Or customize deployment
+./deploy.ps1 -ResourceGroupName "my-rg" -Location "eastus" -SearchIndexName "my-index"
+```
+
+The deployment will:
+- ✅ Create a new resource group (or use existing)
+- ✅ Deploy Azure AI Search service
+- ✅ Deploy Container Apps infrastructure
+- ✅ Build and push Docker image
+- ✅ Deploy MCP server container
+
+### 3. Index Your PDF Documents
+
+After deployment, go to Azure Portal and:
+1. Navigate to your Azure AI Search service
+2. Create an index named 'pdf-index' (or the name you specified)
+3. Index your PDF documents using Azure AI Document Intelligence or custom indexing
+
+### 4. Test Your Deployment
+
+```powershell
+# Test health endpoint
+curl https://your-container-app-url.azurecontainerapps.io/health
+
+# Test search (use API key from deployment output)
+curl -X POST https://your-container-app-url.azurecontainerapps.io/api/search `
+  -H "x-api-key: YOUR_API_KEY" `
+  -H "Content-Type: application/json" `
+  -d '{"query": "test", "top": 5}'
+```
+
+### 5. Local Development (Optional)
+
+```powershell
+# Copy deployment outputs to .env.local
 copy .env.example .env.local
+# Edit .env.local with values from deployment output
 
-# Edit .env.local with your actual values
-# - SEARCH_ENDPOINT: Your Azure AI Search URL
-# - SEARCH_KEY: Your search admin key  
-# - SEARCH_INDEX: Your PDF index name
-# - SERVER_API_KEY: Your custom API key
-```
-
-### 2. Validate Configuration
-
-```powershell
-# Check your environment setup
-./validate-env.ps1
-```
-
-### 3. Deploy to Azure
-
-```powershell
-# Deploy with your environment variables
-./deploy-with-env.ps1
-
-# Or test first with dry run
-./deploy-with-env.ps1 -DryRun
-```
-
-### 4. Local Development
-
-```powershell
-# Run locally with your environment
+# Run locally
 npm run dev-local
 ```
 
@@ -205,26 +225,29 @@ Retrieve full document or specific pages:
 
 ## Configuration
 
-### Environment Variables
+The deployment automatically creates and configures all necessary resources. You don't need to set up environment variables before deployment!
 
-All environment variables are managed locally in `.env.local` and automatically deployed to Azure Container Apps.
+### Deployment Parameters
 
-**Setup Process:**
-1. **Copy template**: `copy .env.example .env.local`
-2. **Edit values**: Fill in your actual Azure AI Search details  
-3. **Validate**: `./validate-env.ps1`
-4. **Deploy**: `./deploy-with-env.ps1`
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ResourceGroupName` | `mcp-server-rg` | Azure resource group name |
+| `Location` | `swedencentral` | Azure region |
+| `EnvironmentName` | `mcp` | Environment identifier |
+| `SearchIndexName` | `pdf-index` | Name for your PDF search index |
+| `ApiKey` | Auto-generated | Custom API key (optional) |
 
-**Required Variables:**
+### Post-Deployment Configuration
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SEARCH_ENDPOINT` | Azure AI Search service URL | `https://mysearch.search.windows.net/` |
-| `SEARCH_KEY` | Azure AI Search admin key | `1234567890ABCDEF...` |
-| `SEARCH_INDEX` | Name of your PDF search index | `pdf-documents` |
-| `SERVER_API_KEY` | API key for client authentication | `my-secure-api-key-123` |
+After deployment, you'll receive all connection details including:
+- Azure AI Search endpoint and credentials
+- MCP Server URL
+- Generated API key
 
-📖 **See [ENV-SETUP.md](ENV-SETUP.md) for complete configuration guide.**
+Use these values to:
+1. Index your PDF documents in Azure AI Search
+2. Configure your client applications
+3. Set up local development environment (if needed)
 
 ### Azure Resources
 

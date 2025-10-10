@@ -9,16 +9,16 @@ param environmentName string
 @description('Primary location for all resources')
 param location string = 'swedencentral'
 
-// Optional parameters
-@description('Azure AI Search service name')
-param searchServiceName string = ''
+@description('Name of the search index containing your PDF documents')
+param searchIndexName string = 'pdf-index'
 
 @description('Azure AI Search SKU')
 @allowed(['free', 'basic', 'standard', 'standard2', 'standard3', 'storage_optimized_l1', 'storage_optimized_l2'])
-param searchServiceSku string = 'standard'
+param searchServiceSku string = 'basic'
 
-@description('Name of the search index containing your PDF documents')
-param searchIndexName string = 'pdf-index'
+@description('Custom API key for the MCP server (optional - will generate if not provided)')
+@secure()
+param serverApiKey string = ''
 
 @description('Container app CPU and memory configuration')
 param containerAppConfig object = {
@@ -32,6 +32,31 @@ param containerAppConfig object = {
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(resourceGroup().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+var generatedApiKey = !empty(serverApiKey) ? serverApiKey : 'mcp-${uniqueString(resourceToken, environmentName)}'
+
+// Log Analytics workspace
+module logAnalytics 'core/monitor/loganalytics.bicep' = {
+  name: 'loganalytics'
+  params: {
+    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
+    location: location
+    tags: tags
+  }
+}
+
+// Azure AI Search service - CREATE NEW
+module searchService 'core/search/search-services.bicep' = {
+  name: 'search-service'
+  params: {
+    name: '${abbrs.searchSearchServices}${resourceToken}'
+    location: location
+    tags: tags
+    sku: {
+      name: searchServiceSku
+    }
+    semanticSearch: 'free'
+  }
+}
 
 // Container apps environment
 module containerAppsEnvironment 'core/host/container-apps-environment.bicep' = {
@@ -52,21 +77,6 @@ module containerRegistry 'core/host/container-registry.bicep' = {
     location: location
     tags: tags
   }
-}
-
-// Log Analytics workspace
-module logAnalytics 'core/monitor/loganalytics.bicep' = {
-  name: 'loganalytics'
-  params: {
-    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    location: location
-    tags: tags
-  }
-}
-
-// Azure AI Search service (existing)
-resource existingSearchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
-  name: !empty(searchServiceName) ? searchServiceName : 'mcpserver-search'
 }
 
 // User assigned managed identity for container app
@@ -94,15 +104,15 @@ module mcpServer 'core/host/container-app.bicep' = {
     secrets: [
       {
         name: 'search-endpoint'
-        value: 'https://${existingSearchService.name}.search.windows.net/'
+        value: searchService.outputs.endpoint
       }
       {
         name: 'search-key'
-        value: existingSearchService.listAdminKeys().primaryKey
+        value: searchService.outputs.adminKey
       }
       {
         name: 'server-api-key'
-        value: 'PLEASE-CHANGE-THIS-${uniqueString(resourceToken)}'
+        value: generatedApiKey
       }
     ]
     env: [
@@ -169,10 +179,11 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = containerAppsEnvironment.o
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
 
-output SEARCH_SERVICE_NAME string = existingSearchService.name
-output SEARCH_ENDPOINT string = 'https://${existingSearchService.name}.search.windows.net/'
+output SEARCH_SERVICE_NAME string = searchService.outputs.name
+output SEARCH_ENDPOINT string = searchService.outputs.endpoint
+output SEARCH_INDEX_NAME string = searchIndexName
 
 output MCP_SERVER_URI string = mcpServer.outputs.uri
-output MCP_SERVER_API_KEY string = 'PLEASE-CHANGE-THIS-${uniqueString(resourceToken)}'
+output MCP_SERVER_API_KEY string = generatedApiKey
 
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
