@@ -27,12 +27,19 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
+# Get resource group from environment or use default
+$resourceGroup = if ($envVars.ContainsKey('AZURE_RESOURCE_GROUP')) { $envVars['AZURE_RESOURCE_GROUP'] } else { "mcpserver" }
+$environmentName = if ($envVars.ContainsKey('AZURE_ENV_NAME')) { $envVars['AZURE_ENV_NAME'] } else { "mcp-pdf" }
+
+Write-Info "Using Resource Group: $resourceGroup"
+Write-Info "Using Environment Name: $environmentName"
+
 # Deploy container registry and environment only
 Write-Info "Deploying Container Registry and Environment..."
 $infraResult = az deployment group create `
-    --resource-group "mcpserver" `
+    --resource-group $resourceGroup `
     --template-file "infra/phase1-infra.bicep" `
-    --parameters environmentName="mcp-pdf" `
+    --parameters environmentName=$environmentName `
     --query "properties.outputs" `
     --output json
 
@@ -100,9 +107,9 @@ if ($envVars['SEARCH_ENDPOINT'] -match "https://([^.]+)\.search\.windows\.net") 
 }
 
 $appResult = az deployment group create `
-    --resource-group "mcpserver" `
+    --resource-group $resourceGroup `
     --template-file "infra/phase2-app.bicep" `
-    --parameters environmentName="mcp-pdf" `
+    --parameters environmentName=$environmentName `
     --parameters searchServiceName="$searchServiceName" `
     --parameters searchIndexName="$($envVars['SEARCH_INDEX'])" `
     --parameters searchEndpoint="$($envVars['SEARCH_ENDPOINT'])" `
