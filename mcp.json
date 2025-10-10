@@ -1,9 +1,10 @@
 {
   "mcpServers": {
-    "custom-pli-mcp": {
+    "pdf-search-mcp": {
       "type": "http",
       "url": "${MCP_SERVER_URL}",
       "headers": {
+        "x-api-key": "${MCP_SERVER_API_KEY}",
         "Content-Type": "application/json"
       },
       "tools": ["search", "fetch"]
