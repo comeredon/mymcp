@@ -1,24 +1,22 @@
-# MCP Azure PDF Know- 🐳 **Container Ready**: Optimized for Azure Container Apps deployment
+# MCP Azure PDF Knowledge Server
 
 ## GitHub Copilot Integration
 
-Your MCP server is fully compatible with GitHub Copilot! The repository includes a `mcp.json` configuration file that GitHub Copilot can automatically detect and use.
+Your MCP server is fully compatible with GitHub Copilot! After deployment, configure GitHub Copilot to use your MCP server.
 
 ### Setup
 
-1. **Environment Variables**: Set these in your environment:
-   ```bash
-   MCP_SERVER_URL=https://your-container-app-url.azurecontainerapps.io/api/tools
-   ```
+1. **Get deployment outputs** from the deploy.ps1 script (MCP Server URL and API Key)
 
-2. **MCP Configuration**: The `mcp.json` file uses environment variables for security:
+2. **Update mcp.json** with your deployment details:
    ```json
    {
      "mcpServers": {
-       "custom-pli-mcp": {
+       "pdf-search": {
          "type": "http",
-         "url": "${MCP_SERVER_URL}",
+         "url": "https://your-actual-server-url.azurecontainerapps.io/api/tools",
          "headers": {
+           "x-api-key": "your-actual-api-key",
            "Content-Type": "application/json"
          },
          "tools": ["search", "fetch"]
@@ -27,35 +25,29 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
    }
    ```
 
-3. **Automatic Detection**: GitHub Copilot will automatically detect and use your MCP server
-4. **Ready to Use**: Ask questions about your PL/I documentation directly in GitHub Copilot Chat
-
-### Usage Examples
-
-```
-@copilot Search for "V6R1 enhancements" in the PL/I documentation
-@copilot What are the compiler options for FIXED DECIMAL optimization?
-@copilot Find information about INLIST and INARRAY built-in functions
-@copilot Is this PL/I code correct: DCL file-reference FILE STREAM
-@copilot Look up "ORDINALNAME" built-in function usage
-```
+3. **Use with GitHub Copilot Chat**:
+   ```
+   @copilot Search for "performance optimization" in my PDF documentation
+   @copilot What does the documentation say about configuration?
+   @copilot Find information about installation procedures
+   ```
 
 ### Available Tools
 
 - **🔍 Search Tool**: Semantic search across your indexed PDF documentation
 - **📄 Fetch Tool**: Retrieve specific document content and pages
 
-With this integration, GitHub Copilot can provide accurate answers based on your PL/I documentation!
-
 A production-ready REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Deployed as an Azure Container App with full GitHub Copilot integration support.
 
-## ✅ Status: **FULLY FUNCTIONAL**
+## ✨ Simplified Deployment
 
-The MCP server is deployed and operational with:
-- ✅ **Working Search**: Returns actual document content with correct field mapping
-- ✅ **GitHub Copilot Ready**: Provides structured responses for AI integration  
-- ✅ **Production Deployed**: Running on Azure Container Apps
-- ✅ **Authenticated Access**: Secure API key authentication
+**No pre-deployment setup required!** Simply run `./deploy.ps1` and it will:
+- ✅ Create all Azure resources automatically (Search service, Container Apps, etc.)
+- ✅ Build and deploy your Docker container
+- ✅ Generate secure credentials
+- ✅ Provide complete deployment outputs
+
+Just login to Azure, run the script, and you're ready to index your PDFs!
 
 ## Features
 
