@@ -102,7 +102,7 @@ module mcpServer 'core/host/container-app.bicep' = {
       }
       {
         name: 'server-api-key'
-        value: 'changeme-${uniqueString(resourceToken)}'
+        value: 'PLEASE-CHANGE-THIS-${uniqueString(resourceToken)}'
       }
     ]
     env: [
@@ -173,6 +173,6 @@ output SEARCH_SERVICE_NAME string = existingSearchService.name
 output SEARCH_ENDPOINT string = 'https://${existingSearchService.name}.search.windows.net/'
 
 output MCP_SERVER_URI string = mcpServer.outputs.uri
-output MCP_SERVER_API_KEY string = 'changeme-${uniqueString(resourceToken)}'
+output MCP_SERVER_API_KEY string = 'PLEASE-CHANGE-THIS-${uniqueString(resourceToken)}'
 
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name

@@ -27,12 +27,19 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
+# Get resource group from environment or use default
+$resourceGroup = if ($envVars.ContainsKey('AZURE_RESOURCE_GROUP')) { $envVars['AZURE_RESOURCE_GROUP'] } else { "mcpserver" }
+$environmentName = if ($envVars.ContainsKey('AZURE_ENV_NAME')) { $envVars['AZURE_ENV_NAME'] } else { "mcp-pdf" }
+
+Write-Info "Using Resource Group: $resourceGroup"
+Write-Info "Using Environment Name: $environmentName"
+
 # Deploy container registry and environment only
 Write-Info "Deploying Container Registry and Environment..."
 $infraResult = az deployment group create `
-    --resource-group "mcpserver" `
+    --resource-group $resourceGroup `
     --template-file "infra/phase1-infra.bicep" `
-    --parameters environmentName="mcp-pdf" `
+    --parameters environmentName=$environmentName `
     --query "properties.outputs" `
     --output json
 
@@ -71,12 +78,40 @@ if ($LASTEXITCODE -ne 0) {
 
 # Phase 3: Deploy Container App
 Write-Info "Phase 3: Deploying Container App..."
+
+# Validate required environment variables
+if (!$envVars.ContainsKey('SEARCH_ENDPOINT')) {
+    Write-Error "SEARCH_ENDPOINT is required in .env.local"
+    exit 1
+}
+if (!$envVars.ContainsKey('SEARCH_KEY')) {
+    Write-Error "SEARCH_KEY is required in .env.local"
+    exit 1
+}
+if (!$envVars.ContainsKey('SEARCH_INDEX')) {
+    Write-Error "SEARCH_INDEX is required in .env.local"
+    exit 1
+}
+if (!$envVars.ContainsKey('SERVER_API_KEY')) {
+    Write-Error "SERVER_API_KEY is required in .env.local"
+    exit 1
+}
+
+# Extract search service name from endpoint
+$searchServiceName = ""
+if ($envVars['SEARCH_ENDPOINT'] -match "https://([^.]+)\.search\.windows\.net") {
+    $searchServiceName = $matches[1]
+} else {
+    Write-Error "Invalid SEARCH_ENDPOINT format. Expected: https://your-service.search.windows.net/"
+    exit 1
+}
+
 $appResult = az deployment group create `
-    --resource-group "mcpserver" `
+    --resource-group $resourceGroup `
     --template-file "infra/phase2-app.bicep" `
-    --parameters environmentName="mcp-pdf" `
-    --parameters searchServiceName="mcpserver-search" `
-    --parameters searchIndexName="multimodal-rag-1756212867317" `
+    --parameters environmentName=$environmentName `
+    --parameters searchServiceName="$searchServiceName" `
+    --parameters searchIndexName="$($envVars['SEARCH_INDEX'])" `
     --parameters searchEndpoint="$($envVars['SEARCH_ENDPOINT'])" `
     --parameters searchKey="$($envVars['SEARCH_KEY'])" `
     --parameters serverApiKey="$($envVars['SERVER_API_KEY'])" `
