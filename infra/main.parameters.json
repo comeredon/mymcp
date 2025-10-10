@@ -9,10 +9,10 @@
       "value": "swedencentral"
     },
     "searchServiceName": {
-      "value": "mcpserver-search"
+      "value": "${SEARCH_SERVICE_NAME=your-search-service}"
     },
     "searchIndexName": {
-      "value": "multimodal-rag-1756212867317"
+      "value": "${SEARCH_INDEX=your-pdf-index}"
     }
   }
 }

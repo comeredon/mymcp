@@ -8,7 +8,7 @@ Your MCP server is fully compatible with GitHub Copilot! The repository includes
 
 1. **Environment Variables**: Set these in your environment:
    ```bash
-   MCP_SERVER_URL=https://ca-mcp-ojyyemcqhgob2.agreeablestone-e6b128d0.swedencentral.azurecontainerapps.io/api/tools
+   MCP_SERVER_URL=https://your-container-app-url.azurecontainerapps.io/api/tools
    ```
 
 2. **MCP Configuration**: The `mcp.json` file uses environment variables for security:
