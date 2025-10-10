@@ -2,7 +2,7 @@
   "mcpServers": {
     "custom-pli-mcp": {
       "type": "http",
-      "url": "https://REDACTED_CONTAINER_APP_URL/api/tools",
+      "url": "${MCP_SERVER_URL}",
       "headers": {
         "Content-Type": "application/json"
       },
