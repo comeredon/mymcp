@@ -2,12 +2,12 @@
   "mcpServers": {
     "pdf-search-mcp": {
       "type": "http",
-      "url": "${MCP_SERVER_URL}",
+      "url": "${APIM_MCP_API_URL}/api/tools",
       "headers": {
-        "x-api-key": "${MCP_SERVER_API_KEY}",
         "Content-Type": "application/json"
       },
-      "tools": ["search", "fetch"]
+      "tools": ["search", "fetch"],
+      "description": "MCP server for searching and retrieving PDF documents via Azure API Management"
     }
   }
 }
