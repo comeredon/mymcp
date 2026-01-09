@@ -467,11 +467,33 @@ Use the validation script to check your deployment:
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+**This repository is maintained for production use and has strict contribution guidelines:**
+
+### For Users
+- ✅ **Fork freely** - You're encouraged to fork this repository for your own use
+- ✅ **Customize** - Adapt the code to your specific needs
+- ✅ **Learn & Share** - Use this as a learning resource and share knowledge
+
+### For Contributors
+- 🔒 **Protected main branch** - Direct pushes are not allowed
+- ✅ **Submit issues** - Report bugs or suggest enhancements via GitHub Issues
+- ✅ **Pull requests welcome** - For bug fixes or improvements:
+  1. Fork the repository
+  2. Create a feature branch from `main`
+  3. Make your changes with clear commit messages
+  4. Test thoroughly (include test results if applicable)
+  5. Submit a pull request with detailed description
+  6. All PRs require approval and review before merge
+
+### Branch Protection Rules
+- ✅ Pull request reviews required (minimum 1 approval)
+- ✅ Linear history enforced (no merge commits)
+- ✅ Conversation resolution required before merge
+- ✅ Stale reviews dismissed on new pushes
+- ✅ No force pushes or branch deletions
+- ✅ Admin approval required for all changes
+
+**Note:** Only repository maintainers can merge changes to ensure code quality and security standards.
 
 ## License
 
