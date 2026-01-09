@@ -378,7 +378,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`Legacy format - Tool: ${tool}, Args:`, args);
+    console.log("Legacy format - Tool: %s, Args:", tool, args);
 
     // Handle legacy format requests
     switch (tool.toLowerCase()) {
