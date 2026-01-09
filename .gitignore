@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 npm-debug.log*
+package-lock.json
 
 # Build outputs
 dist/
@@ -10,24 +11,56 @@ build/
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
 logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Azure
-.azure/
+.azure/*
+!.azure/.env.template
+!.azure/mcp/
+.azure/mcp/*
+!.azure/mcp/.env
 *.azd.env
+
+# GitHub
+.github/agents/
+.github/copilot/
 
 # TypeScript
 *.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Internal review files (do not commit)
+REVIEW_*.md
+*_INTERNAL.md
+CLEANUP_SUMMARY.md

@@ -1,22 +1,126 @@
 # MCP Azure PDF Knowledge Server
 
-## GitHub Copilot Integration
+A production-ready, secure REST API server that provides semantic search and document retrieval from indexed PDF documents. Deployed on Azure with enterprise-grade security using API Management as a gateway.
 
-Your MCP server is fully compatible with GitHub Copilot! After deployment, configure GitHub Copilot to use your MCP server.
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Azure Subscription                               │
+│                                                                          │
+│  ┌────────────────────┐                                                 │
+│  │  GitHub Copilot    │                                                 │
+│  │  or MCP Client     │                                                 │
+│  └─────────┬──────────┘                                                 │
+│            │ HTTPS                                                       │
+│            │                                                            │
+│  ┌─────────▼──────────────────────────────────────────────────┐        │
+│  │          Azure API Management (APIM)                        │        │
+│  │  ┌──────────────────────────────────────────────────┐      │        │
+│  │  │  MCP API Endpoints:                              │      │        │
+│  │  │  • /mcp/health          (no auth)               │      │        │
+│  │  │  • /mcp/api/tools       (auth via policy)       │      │        │
+│  │  │  • /mcp/api/search      (auth via policy)       │      │        │
+│  │  │  • /mcp/api/fetch       (auth via policy)       │      │        │
+│  │  └──────────────────────────────────────────────────┘      │        │
+│  │                                                              │        │
+│  │  Security: API Key injection via policy                     │        │
+│  │  Benefits: Rate limiting, monitoring, caching               │        │
+│  └──────────────────────┬───────────────────────────────────────┘        │
+│                         │ Internal Network                               │
+│                         │                                               │
+│  ┌──────────────────────▼────────────────────────────────────┐          │
+│  │      Container Apps Environment (Internal Only)           │          │
+│  │  ┌────────────────────────────────────────────────┐       │          │
+│  │  │   MCP Server Container App                     │       │          │
+│  │  │   • Express.js REST API                        │       │          │
+│  │  │   • Node.js 20 + TypeScript                    │       │          │
+│  │  │   • No direct external access                  │       │          │
+│  │  │   • Managed Identity authentication            │       │          │
+│  │  └────────┬───────────────────────┬────────────────┘       │          │
+│  └───────────┼───────────────────────┼─────────────────────────┘          │
+│              │                       │                                   │
+│              │ Managed Identity      │ Managed Identity                  │
+│              │                       │                                   │
+│  ┌───────────▼──────────┐   ┌───────▼──────────┐   ┌──────────────┐   │
+│  │  Azure AI Search     │   │  Storage Account │   │ Azure OpenAI │   │
+│  │  ┌────────────────┐  │   │  ┌────────────┐  │   │  ┌────────┐  │   │
+│  │  │ PDF Index      │  │   │  │ Blob:      │  │   │  │ GPT-4o │  │   │
+│  │  │ Semantic       │  │   │  │ Documents  │  │   │  │ Vision │  │   │
+│  │  │ • Embeddings   │  │   │  │ • pdfs     │  │   │  │ Embed  │  │   │
+│  │  │ • Semantic     │  │   │  │ • documents│  │   │  └────────┘  │   │
+│  │  │   Search       │  │   │  └────────────┘  │   │              │   │
+│  │  └────────────────┘  │   └──────────────────┘   └──────────────┘   │
+│  └──────────────────────┘                                              │
+│                                                                         │
+│  ┌──────────────────────┐   ┌──────────────────────┐                  │
+│  │  Log Analytics       │   │  Container Registry  │                  │
+│  │  • Application Logs  │   │  • Docker Images     │                  │
+│  │  • APIM Logs         │   │  • ACR Pull via MI   │                  │
+│  │  • Monitoring        │   └──────────────────────┘                  │
+│  └──────────────────────┘                                              │
+│                                                                         │
+│  Security: Managed Identity + RBAC + Key Vault                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Key Security Features:
+✅ Container App is INTERNAL ONLY - no direct external access
+✅ All traffic flows through API Management gateway
+✅ API keys managed securely via APIM policies
+✅ Managed Identity for service-to-service authentication
+✅ RBAC (Role-Based Access Control) for all Azure resources
+✅ TLS/HTTPS enforced on all endpoints
+```
+
+## 🔒 Security Architecture
+
+### Multi-Layer Security
+
+1. **API Management (Gateway)**
+   - Public-facing endpoint
+   - API key injection via policies
+   - Rate limiting and throttling
+   - Request/response transformation
+   - Monitoring and logging
+
+2. **Container App (Internal)**
+   - No external ingress
+   - Only accessible from APIM within Azure network
+   - Managed Identity authentication
+   - No hardcoded credentials
+
+3. **Data Services**
+   - Managed Identity authentication (no keys)
+   - RBAC for fine-grained access control
+   - Network security via service endpoints
+   - Encryption at rest and in transit
+
+## ✨ Features
+
+- 🔍 **Semantic Search**: AI-powered search across indexed PDF documents using Azure AI Search
+- 📄 **Document Retrieval**: Fetch full text or specific pages from PDF documents
+- 🤖 **GitHub Copilot Integration**: MCP-compatible endpoints for AI assistance
+- 🛡️ **Enterprise Security**: API Management gateway with managed identity authentication
+- 🌐 **RESTful API**: Simple HTTP endpoints with comprehensive documentation
+- 📊 **Monitoring**: Built-in health checks, logging, and Azure Monitor integration
+- 🔐 **Zero Trust**: Internal-only container app, all access via APIM gateway
+- ⚡ **Auto-scaling**: Automatic scaling based on demand
+- 🐳 **Container-based**: Deployed on Azure Container Apps for reliability
+
+## GitHub Copilot Integration
 
 ### Setup
 
-1. **Get deployment outputs** from the deploy.ps1 script (MCP Server URL and API Key)
-
-2. **Update mcp.json** with your deployment details:
+1. **Deploy** the infrastructure using the deployment script
+2. **Get** the API Management URL from deployment outputs
+3. **Update** your `mcp.json`:
    ```json
    {
      "mcpServers": {
-       "pdf-search": {
+       "pdf-search-mcp": {
          "type": "http",
-         "url": "https://your-actual-server-url.azurecontainerapps.io/api/tools",
+         "url": "https://your-apim-gateway.azure-api.net/mcp/api/tools",
          "headers": {
-           "x-api-key": "your-actual-api-key",
            "Content-Type": "application/json"
          },
          "tools": ["search", "fetch"]
@@ -25,7 +129,7 @@ Your MCP server is fully compatible with GitHub Copilot! After deployment, confi
    }
    ```
 
-3. **Use with GitHub Copilot Chat**:
+4. **Use** with GitHub Copilot Chat:
    ```
    @copilot Search for "performance optimization" in my PDF documentation
    @copilot What does the documentation say about configuration?
@@ -34,41 +138,8 @@ Your MCP server is fully compatible with GitHub Copilot! After deployment, confi
 
 ### Available Tools
 
-- **🔍 Search Tool**: Semantic search across your indexed PDF documentation
-- **📄 Fetch Tool**: Retrieve specific document content and pages
-
-A production-ready REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Deployed as an Azure Container App with full GitHub Copilot integration support.
-
-## ✨ Simplified Deployment
-
-**No pre-deployment setup required!** Simply run `./deploy.ps1` and it will:
-- ✅ Create all Azure resources automatically (Search service, Container Apps, etc.)
-- ✅ Build and deploy your Docker container
-- ✅ Generate secure credentials
-- ✅ Provide complete deployment outputs
-
-Just login to Azure, run the script, and you're ready to index your PDFs!
-
-## Features
-
-- 🔍 **Semantic Search**: Search across indexed PDF documents using Azure AI Search
-- 📄 **Document Retrieval**: Fetch full text or specific pages from PDF documents
-- 🤖 **GitHub Copilot Integration**: MCP-compatible endpoints for AI assistance
-- 🌐 **RESTful API**: Simple HTTP endpoints for integration
-- 🔐 **Authentication**: API key-based authentication for security
-- 📊 **Health Monitoring**: Built-in health check endpoint
-- 🐳 **Container Ready**: Optimized for Azure Container Apps deploymentPDF Knowledge Server
-
-A REST API server that connects to Azure AI Search to provide semantic search and document retrieval from indexed PDF documents. Designed to run as an Azure Container App.
-
-## Features
-
-- 🔍 **Semantic Search**: Search across indexed PDF documents using Azure AI Search
-- 📄 **Document Retrieval**: Fetch full text or specific pages from PDF documents
-- 🌐 **RESTful API**: Simple HTTP endpoints for integration
-- � **Authentication**: API key-based authentication for security
-- 📊 **Health Monitoring**: Built-in health check endpoint
-- 🐳 **Container Ready**: Optimized for Azure Container Apps deployment
+- **🔍 search** - Semantic search across indexed PDF documents
+- **📄 fetch** - Retrieve specific document content and pages
 
 ## Quick Start
 
@@ -76,7 +147,8 @@ A REST API server that connects to Azure AI Search to provide semantic search an
 
 - Azure CLI (`az --version`)
 - Docker Desktop (running)
-- Node.js 18+ (`node --version`)
+- Node.js 20+ (`node --version`)
+- Azure subscription with Contributor access
 
 ### 2. Deploy to Azure
 
@@ -85,18 +157,29 @@ A REST API server that connects to Azure AI Search to provide semantic search an
 az login
 
 # Deploy everything (creates all resources)
-./deploy.ps1
+./deploy.ps1 -ApimPublisherEmail "admin@yourdomain.com" -ApimPublisherName "YourOrg"
 
 # Or customize deployment
-./deploy.ps1 -ResourceGroupName "my-rg" -Location "eastus" -SearchIndexName "my-index"
+./deploy.ps1 `
+  -ResourceGroupName "my-rg" `
+  -Location "eastus" `
+  -ApimPublisherEmail "admin@yourdomain.com" `
+  -ApimPublisherName "YourOrg"
 ```
 
-The deployment will:
-- ✅ Create a new resource group (or use existing)
-- ✅ Deploy Azure AI Search service
-- ✅ Deploy Container Apps infrastructure
-- ✅ Build and push Docker image
-- ✅ Deploy MCP server container
+The deployment will create:
+- ✅ Resource group (or use existing)
+- ✅ API Management gateway (public endpoint)
+- ✅ Container App (internal only)
+- ✅ Container Apps Environment
+- ✅ Container Registry
+- ✅ Azure AI Search
+- ✅ Storage Account
+- ✅ Azure OpenAI
+- ✅ Log Analytics
+- ✅ Managed Identity with RBAC roles
+
+**Important:** The Container App is deployed as **internal only**. All external access must go through API Management for security.
 
 ### 3. Index Your PDF Documents
 
@@ -108,39 +191,81 @@ After deployment, go to Azure Portal and:
 ### 4. Test Your Deployment
 
 ```powershell
-# Test health endpoint
-curl https://your-container-app-url.azurecontainerapps.io/health
+# Get APIM Gateway URL from deployment output
+$apimUrl = "<your-apim-gateway-url>"  # e.g., https://apim-xxxxx.azure-api.net
 
-# Test search (use API key from deployment output)
-curl -X POST https://your-container-app-url.azurecontainerapps.io/api/search `
-  -H "x-api-key: YOUR_API_KEY" `
+# Test health endpoint (no auth required)
+curl "$apimUrl/mcp/health"
+
+# Test MCP tools endpoint
+curl -X POST "$apimUrl/mcp/api/tools" `
+  -H "Content-Type: application/json" `
+  -d '{"tool": "search", "arguments": {"query": "test", "top": 5}}'
+
+# Test search endpoint directly
+curl -X POST "$apimUrl/mcp/api/search" `
   -H "Content-Type: application/json" `
   -d '{"query": "test", "top": 5}'
 ```
 
-### 5. Local Development (Optional)
+**Note:** API authentication is handled automatically by APIM policies. No API key header required from clients.
 
-```powershell
-# Copy deployment outputs to .env.local
-copy .env.example .env.local
-# Edit .env.local with values from deployment output
+### 5. Configure GitHub Copilot
 
-# Run locally
-npm run dev-local
+Update your `mcp.json` with the APIM URL from deployment outputs:
+
+```json
+{
+  "mcpServers": {
+    "pdf-search-mcp": {
+      "type": "http",
+      "url": "https://your-apim-gateway.azure-api.net/mcp/api/tools",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }
+}
 ```
 
 ## API Endpoints
 
+All endpoints are accessed through API Management. The base URL is: `https://<your-apim-gateway>.azure-api.net/mcp`
+
 ### Health Check
 ```
-GET /health
+GET /mcp/health
 ```
-Returns service health status (no authentication required).
+Returns service health status. No authentication required.
 
-### Search Endpoint  
+**Response:**
+```json
+{
+  "status": "healthy"
+}
 ```
-POST /api/search
-Headers: x-api-key: YOUR_API_KEY
+
+### MCP Tools Endpoint (for GitHub Copilot)
+```
+POST /mcp/api/tools
+Content-Type: application/json
+
+{
+  "tool": "search",
+  "arguments": {
+    "query": "your search query",
+    "top": 5
+  }
+}
+```
+
+**Available Tools:**
+- `search` - Semantic search across PDF documents
+- `fetch` - Retrieve specific document or pages
+
+### Search Endpoint
+```
+POST /mcp/api/search
 Content-Type: application/json
 
 {
@@ -149,25 +274,9 @@ Content-Type: application/json
 }
 ```
 
-### Tools Endpoint (GitHub Copilot Integration)
-```
-POST /api/tools  
-Headers: x-api-key: YOUR_API_KEY
-Content-Type: application/json
-
-{
-  "tool": "search",
-  "arguments": {
-    "query": "your search query", 
-    "top": 5
-  }
-}
-```
-
 ### Fetch Endpoint
 ```
-POST /api/fetch
-Headers: x-api-key: YOUR_API_KEY
+POST /mcp/api/fetch
 Content-Type: application/json
 
 {
@@ -176,48 +285,27 @@ Content-Type: application/json
 }
 ```
 
-## Working Example
-
-**Question:** "What are the enhancements from V6R1?"
-
-**Response:** Returns comprehensive information about PL/I V6R1 enhancements including:
-- Performance improvements for FIXED DECIMAL and PICTURE variables
-- New hardware instruction utilization
-- Enhanced compiler options (BASE64, HEXDECODE, NOPUT, DCLS suboptions)
-- Better storage problem detection
-- ZLIB compression samples
-
-## MCP Tools
-
-The server provides GitHub Copilot-compatible tools:
-
-#### 1. Search Tool
-Search for relevant PDF content:
-```json
-{
-  "name": "search",
-  "arguments": {
-    "query": "your search query",
-    "top": 5
-  }
-}
-```
-
-#### 2. Fetch Tool
-Retrieve full document or specific pages:
-```json
-{
-  "name": "fetch",
-  "arguments": {
-    "id": "document-id",
-    "pages": [1, 2, 3]
-  }
-}
-```
+**Note:** API authentication is handled by APIM policies. The API key is injected automatically - no client-side authentication headers required.
 
 ## Configuration
 
-The deployment automatically creates and configures all necessary resources. You don't need to set up environment variables before deployment!
+### Two Types of Configuration Files
+
+This repository contains two separate configuration file systems:
+
+#### 1. Local Development (`.env.example` → `.env.local`)
+For running the MCP server locally on your development machine:
+- Copy `.env.example` to `.env.local`
+- Fill in values from your Azure resources
+- Used by `npm run dev-local`
+
+#### 2. Azure Deployment (`.azure/mcp/.env`)
+For deploying to Azure using Azure Developer CLI:
+- Configure deployment settings (region, environment name, etc.)
+- Used by `azd up` and `./deploy.ps1`
+- No secrets - only deployment configuration
+
+These serve different purposes and do not conflict.
 
 ### Deployment Parameters
 
@@ -289,13 +377,46 @@ param containerAppConfig object = {
 ### Project Structure
 ```
 ├── src/
-│   └── server.ts          # Main MCP server
-├── infra/                 # Bicep templates
-│   ├── main.bicep
-│   └── core/             # Reusable modules
-├── Dockerfile
-├── azure.yaml            # AZD configuration
-└── package.json
+│   └── server.ts                      # Main MCP server application
+├── infra/                             # Infrastructure as Code (Bicep)
+│   ├── main.bicep                    # Main deployment template
+│   ├── abbreviations.json            # Resource naming conventions
+│   └── core/                         # Reusable Bicep modules
+│       ├── ai/
+│       │   └── cognitiveservices.bicep
+│       ├── gateway/
+│       │   └── apim.bicep
+│       ├── host/
+│       │   ├── container-app.bicep
+│       │   ├── container-apps-environment.bicep
+│       │   └── container-registry.bicep
+│       ├── monitor/
+│       │   └── loganalytics.bicep
+│       ├── network/
+│       │   └── vnet.bicep
+│       ├── search/
+│       │   └── search-services.bicep
+│       ├── security/
+│       │   ├── managed-identity.bicep
+│       │   └── role.bicep
+│       └── storage/
+│           └── storage-account.bicep
+├── .azure/                           # Azure Developer CLI config
+│   ├── .env.template
+│   └── mcp/
+│       └── .env
+├── Dockerfile                        # Container definition
+├── azure.yaml                        # AZD configuration
+├── package.json                      # Node.js dependencies
+├── tsconfig.json                     # TypeScript configuration
+├── deploy.ps1                        # PowerShell deployment script
+├── validate-deployment.ps1           # Deployment validation script
+├── DEPLOYMENT.md                     # Detailed deployment guide
+├── DEPLOYMENT_CHECKLIST.md           # Validation checklist
+├── QUICKSTART.md                     # Quick reference guide
+├── SHARING.md                        # Guide for sharing this repo
+├── mcp.json                          # MCP client configuration template
+└── .env.example                      # Environment variables template
 ```
 
 ### Build Commands
@@ -326,7 +447,23 @@ npm run clean
 View application logs:
 ```bash
 azd logs
+# or
+az containerapp logs show --name <app-name> --resource-group <rg-name> --tail 50
 ```
+
+### Validation
+
+Use the validation script to check your deployment:
+```powershell
+.\validate-deployment.ps1 -ResourceGroupName <your-rg-name>
+```
+
+## Documentation
+
+- 📘 **[QUICKSTART.md](./QUICKSTART.md)** - Quick reference for deployment and usage
+- 📗 **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Comprehensive deployment guide
+- 📝 **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Validation checklist
+- 🤝 **[SHARING.md](./SHARING.md)** - Guide for sharing this repository
 
 ## Contributing
 
@@ -338,4 +475,15 @@ azd logs
 
 ## License
 
-MIT License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues, questions, or contributions, please:
+- Check the [documentation](#documentation)
+- Review [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)
+- Submit an issue on GitHub
+
+---
+
+**Ready to deploy?** Check out the [QUICKSTART.md](./QUICKSTART.md) guide!

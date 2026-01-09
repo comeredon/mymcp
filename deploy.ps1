@@ -6,7 +6,11 @@ param(
     [string]$ResourceGroupName = "mcp-server-rg",
     [string]$Location = "swedencentral",
     [string]$SearchIndexName = "pdf-index",
-    [string]$ApiKey = ""
+    [string]$ApiKey = "",
+    [switch]$DeployApim = $false,
+    [string]$ApimPublisherEmail = "admin@contoso.com",
+    [string]$ApimPublisherName = "Contoso",
+    [switch]$DeployVNet = $false
 )
 
 Write-Host "🚀 MCP Azure PDF Server - Unified Deployment" -ForegroundColor Cyan
@@ -51,10 +55,19 @@ Write-Host "✅ Build completed" -ForegroundColor Green
 Write-Host "`nDeploying Azure infrastructure..." -ForegroundColor Yellow
 Write-Host "This will create:" -ForegroundColor Cyan
 Write-Host "  - Azure AI Search service" -ForegroundColor White
+Write-Host "  - Storage Account (for PDF documents)" -ForegroundColor White
+Write-Host "  - Azure OpenAI (with embeddings & chat models)" -ForegroundColor White
 Write-Host "  - Container Apps Environment" -ForegroundColor White
 Write-Host "  - Container Registry" -ForegroundColor White
 Write-Host "  - Log Analytics Workspace" -ForegroundColor White
+Write-Host "  - Managed Identity (with RBAC roles)" -ForegroundColor White
 Write-Host "  - MCP Server Container App" -ForegroundColor White
+if ($DeployApim) {
+    Write-Host "  - API Management" -ForegroundColor White
+}
+if ($DeployVNet) {
+    Write-Host "  - Virtual Network" -ForegroundColor White
+}
 Write-Host ""
 
 $deploymentName = "mcp-deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -71,6 +84,20 @@ $deployParams = @(
 if (-not [string]::IsNullOrEmpty($ApiKey)) {
     $deployParams += "--parameters"
     $deployParams += "serverApiKey=$ApiKey"
+}
+
+if ($DeployApim) {
+    $deployParams += "--parameters"
+    $deployParams += "deployApim=true"
+    $deployParams += "--parameters"
+    $deployParams += "apimPublisherEmail=$ApimPublisherEmail"
+    $deployParams += "--parameters"
+    $deployParams += "apimPublisherName=$ApimPublisherName"
+}
+
+if ($DeployVNet) {
+    $deployParams += "--parameters"
+    $deployParams += "deployVNet=true"
 }
 
 az deployment group create @deployParams --output none
@@ -93,8 +120,16 @@ $acrName = $outputs.AZURE_CONTAINER_REGISTRY_NAME.value
 $acrLoginServer = $outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT.value
 $searchEndpoint = $outputs.SEARCH_ENDPOINT.value
 $searchServiceName = $outputs.SEARCH_SERVICE_NAME.value
-$mcpServerUri = $outputs.MCP_SERVER_URI.value
+$storageAccountName = $outputs.STORAGE_ACCOUNT_NAME.value
+$storageBlobEndpoint = $outputs.STORAGE_BLOB_ENDPOINT.value
+$openAiName = $outputs.AZURE_OPENAI_NAME.value
+$openAiEndpoint = $outputs.AZURE_OPENAI_ENDPOINT.value
+$mcpServerInternalUri = $outputs.MCP_SERVER_INTERNAL_URI.value
+$mcpPublicEndpoint = $outputs.MCP_PUBLIC_ENDPOINT.value
 $generatedApiKey = $outputs.MCP_SERVER_API_KEY.value
+$managedIdentityName = $outputs.MANAGED_IDENTITY_NAME.value
+$apimGatewayUrl = if ($outputs.APIM_GATEWAY_URL) { $outputs.APIM_GATEWAY_URL.value } else { "" }
+$apimName = if ($outputs.APIM_NAME) { $outputs.APIM_NAME.value } else { "" }
 
 # Build and push container image
 Write-Host "`nBuilding Docker image..." -ForegroundColor Yellow
@@ -132,24 +167,71 @@ Write-Host "=====================" -ForegroundColor Cyan
 Write-Host "Resource Group:    $ResourceGroupName" -ForegroundColor White
 Write-Host "Location:          $Location" -ForegroundColor White
 Write-Host ""
-Write-Host "Search Service:    $searchServiceName" -ForegroundColor White
-Write-Host "Search Endpoint:   $searchEndpoint" -ForegroundColor White
-Write-Host "Search Index:      $SearchIndexName (needs to be created and populated)" -ForegroundColor Yellow
+Write-Host "🌐 Public Access (Use This for Copilot)" -ForegroundColor Green
+Write-Host "  MCP API Endpoint: $mcpPublicEndpoint" -ForegroundColor White
+if ($apimGatewayUrl) {
+    Write-Host "  APIM Gateway:     $apimGatewayUrl" -ForegroundColor White
+    Write-Host "  APIM Name:        $apimName" -ForegroundColor White
+}
 Write-Host ""
-Write-Host "MCP Server URL:    $mcpServerUri" -ForegroundColor White
-Write-Host "API Key:           $generatedApiKey" -ForegroundColor White
+Write-Host "🔒 Security Architecture" -ForegroundColor Cyan
+Write-Host "  Container App:    Internal-only (no external access)" -ForegroundColor White
+Write-Host "  Internal URL:     $mcpServerInternalUri" -ForegroundColor Gray
+if ($apimGatewayUrl) {
+    Write-Host "  Traffic Flow:     Copilot → APIM Gateway → Container App → Azure Services" -ForegroundColor White
+    Write-Host "  Authentication:   API Key (injected by APIM policy)" -ForegroundColor White
+} else {
+    Write-Host "  ⚠️ APIM:          Not deployed - using direct Container App access" -ForegroundColor Yellow
+    Write-Host "  ⚠️ Warning:       Container App is exposed externally without APIM!" -ForegroundColor Yellow
+}
+Write-Host ""
+Write-Host "🔍 Search Service" -ForegroundColor Cyan
+Write-Host "  Name:            $searchServiceName" -ForegroundColor White
+Write-Host "  Endpoint:        $searchEndpoint" -ForegroundColor White
+Write-Host "  Index:           $SearchIndexName (needs to be created and populated)" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "📦 Storage Account" -ForegroundColor Cyan
+Write-Host "  Name:            $storageAccountName" -ForegroundColor White
+Write-Host "  Blob Endpoint:   $storageBlobEndpoint" -ForegroundColor White
+Write-Host "  Containers:      pdfs, documents" -ForegroundColor White
+Write-Host ""
+Write-Host "🤖 Azure OpenAI" -ForegroundColor Cyan
+Write-Host "  Name:            $openAiName" -ForegroundColor White
+Write-Host "  Endpoint:        $openAiEndpoint" -ForegroundColor White
+Write-Host "  Deployments:     embeddings (text-embedding-ada-002), chat (gpt-4o)" -ForegroundColor White
+Write-Host ""
+Write-Host "🔐 Identity & Access" -ForegroundColor Cyan
+Write-Host "  Managed Identity: $managedIdentityName" -ForegroundColor White
+Write-Host "  Role Assignments: Search Contributor, Storage Blob Contributor, OpenAI User, ACR Pull" -ForegroundColor White
 Write-Host ""
 Write-Host "📝 Next Steps" -ForegroundColor Cyan
 Write-Host "=============" -ForegroundColor Cyan
-Write-Host "1. Index your PDF documents in Azure AI Search:" -ForegroundColor White
+Write-Host "1. Configure Copilot MCP Client:" -ForegroundColor White
+Write-Host "   Update your mcp.json with:" -ForegroundColor White
+Write-Host "   {" -ForegroundColor Gray
+Write-Host "     `"mcpServers`": {" -ForegroundColor Gray
+Write-Host "       `"custom-pli-mc`": {" -ForegroundColor Gray
+Write-Host "         `"url`": `"$mcpPublicEndpoint`"" -ForegroundColor Gray
+Write-Host "       }" -ForegroundColor Gray
+Write-Host "     }" -ForegroundColor Gray
+Write-Host "   }" -ForegroundColor Gray
+Write-Host ""
+Write-Host "2. Upload PDF documents:" -ForegroundColor White
+Write-Host "   az storage blob upload-batch -d pdfs -s <local-folder> --account-name $storageAccountName" -ForegroundColor Gray
+Write-Host ""
+Write-Host "3. Index your PDF documents in Azure AI Search:" -ForegroundColor White
 Write-Host "   - Go to Azure Portal → Search Service: $searchServiceName" -ForegroundColor White
 Write-Host "   - Create index '$SearchIndexName' with your PDF content" -ForegroundColor White
 Write-Host "   - Use Azure AI Document Intelligence or custom indexing" -ForegroundColor White
 Write-Host ""
-Write-Host "2. Test your deployment:" -ForegroundColor White
-Write-Host "   Health check: curl $mcpServerUri/health" -ForegroundColor White
+Write-Host "4. Test your deployment:" -ForegroundColor White
+Write-Host "   curl $mcpPublicEndpoint/health" -ForegroundColor Gray
 Write-Host ""
-Write-Host "3. Use the MCP server:" -ForegroundColor White
-Write-Host "   Set MCP_SERVER_URL=$mcpServerUri/api/tools" -ForegroundColor White
-Write-Host "   Use API Key: $generatedApiKey" -ForegroundColor White
+Write-Host "5. View logs and monitoring:" -ForegroundColor White
+Write-Host "   az monitor log-analytics query --workspace $logAnalyticsWorkspaceName --analytics-query 'ContainerAppConsoleLogs_CL | top 100 by TimeGenerated'" -ForegroundColor Gray
+Write-Host ""
+Write-Host "4. Configure your MCP client (GitHub Copilot):" -ForegroundColor White
+Write-Host "   Update mcp.json with:" -ForegroundColor White
+Write-Host "   URL: $mcpServerUri/api/tools" -ForegroundColor Gray
+Write-Host "   API Key: $generatedApiKey" -ForegroundColor Gray
 Write-Host ""

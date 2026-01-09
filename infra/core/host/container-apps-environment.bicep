@@ -6,11 +6,23 @@ param tags object = {}
 
 param logAnalyticsWorkspaceName string = ''
 
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = if (!empty(logAnalyticsWorkspaceName)) {
+  name: logAnalyticsWorkspaceName
+}
+
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: name
   location: location
   tags: tags
-  properties: {}
+  properties: {
+    appLogsConfiguration: !empty(logAnalyticsWorkspaceName) ? {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalyticsWorkspace.properties.customerId
+        sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
+      }
+    } : null
+  }
 }
 
 output name string = containerAppsEnvironment.name
