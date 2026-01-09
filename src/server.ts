@@ -236,7 +236,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
       const toolName = req.body.params?.name;
       const args = req.body.params?.arguments || {};
       
-      console.log(`MCP tools/call - Tool: ${toolName}, Args:`, args);
+      console.log("MCP tools/call - Tool: %s, Args:", toolName, args);
 
       if (!toolName) {
         return res.status(400).json({
