@@ -44,9 +44,6 @@ yarn-error.log*
 !.azure/mcp/.env
 *.azd.env
 
-# GitHub
-.github/agents/
-.github/copilot/
 
 # TypeScript
 *.tsbuildinfo
