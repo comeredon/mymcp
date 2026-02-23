@@ -141,6 +141,111 @@ Key Security Features:
 - **🔍 search** - Semantic search across indexed PDF documents
 - **📄 fetch** - Retrieve specific document content and pages
 
+## 🤖 GitHub Copilot Agents & Skills
+
+This repository ships with custom **AI agents** and **reusable skills** that extend GitHub Copilot to automate PL/I-to-Java translation, security analysis, testing, DevOps, and diagramming tasks.
+
+### What Are Custom Agents?
+
+Custom agents are defined in `.github/agents/` as Markdown files with YAML frontmatter (`name`, `description`, `model`, `handoffs`). GitHub Copilot discovers them automatically, making each agent available in Copilot Chat.
+
+**How to invoke an agent in Copilot Chat:**
+
+> Open GitHub Copilot Chat, type `@` and select the agent name (e.g. `@ProgramManager`), then describe your task.
+
+```
+@ProgramManager Analyze the PL/I files and create translation documentation
+@DeveloperAgent Implement the Java 21 translation from the translation/ specs
+@TesterAgent Create and run unit tests for the CustomerRecord class
+@SecurityAgent Scan java-implementation/ for vulnerabilities
+@DevOpsAgent Create a GitHub Actions CI/CD pipeline for the Java app
+@DiagramAgent Generate C4 diagrams for the Java implementation
+```
+
+### Available Agents
+
+| Agent | File | Model | Purpose |
+|-------|------|-------|---------|
+| **ProgramManager** | `my-pm.agent.md` | Claude Opus 4.6 | Analyzes PL/I source files and creates comprehensive documentation in `translation/`. Never writes Java code. Hands off to DeveloperAgent. |
+| **DeveloperAgent** | `my-developer.agent.md` | Claude Opus 4.6 (fast) | Implements Java 21 code from specs in `translation/`. Compiles after every change. Uses `BigDecimal` for decimals, composition for I/O. |
+| **TesterAgent** | `my-tester.agent.md` | Gemini 3 Pro | Validates Java with JUnit 5 unit, integration, and E2E tests. Coverage targets: Data Models 95%, Business Logic 90%, I/O 80%, Utilities 70%. |
+| **SecurityAgent** | `my-security.agent.md` | GPT-5.3-Codex | SAST, SCA, infrastructure, and OWASP compliance analysis. Produces `security-reports/security-report.md`. |
+| **DevOpsAgent** | `my-devops.agent.md` | Claude Sonnet 4 | CI/CD pipelines (GitHub Actions), multi-stage Docker builds, and Azure deployment. |
+| **DiagramAgent** | `my-dagram.agend.md` | Claude Opus 4.6 (fast) | Generates C4 model diagrams (Context → Container → Component → Code) as PlantUML files under `docs/diagrams/c4/`. |
+
+### What Are Skills?
+
+Skills are reusable instruction sets stored in `.github/skills/`. Each skill folder contains a `SKILL.md` with focused, expert guidance that agents load dynamically based on the task phase. Agents load only the skills they need, keeping context lean.
+
+**Skill loading is automatic** — instruct an agent to load a skill by name:
+
+```
+@DeveloperAgent Load the development/type-mapping skill and implement the CustomerRecord model
+```
+
+### Available Skills
+
+| Category | Skill | Path | Purpose | Used By |
+|----------|-------|------|---------|---------|
+| **development** | `implementation-workflow` | `development/implementation-workflow` | Step-by-step PL/I→Java translation orchestration | DeveloperAgent |
+| **development** | `java-patterns` | `development/java-patterns` | Immutable models, I/O composition patterns | DeveloperAgent |
+| **development** | `type-mapping` | `development/type-mapping` | PL/I-to-Java type conversion rules | DeveloperAgent, ProgramManager |
+| **development** | `record-parsing` | `development/record-parsing` | Fixed-width byte-offset record parsing | DeveloperAgent |
+| **development** | `data-generation` | `development/data-generation` | Generate 80-byte test data records | DeveloperAgent |
+| **development** | `code-checklist` | `development/code-checklist` | Pre-compile quality checklist | DeveloperAgent |
+| **development** | `frontmatter-navigation` | `development/frontmatter-navigation` | Navigate `translation/` docs by frontmatter metadata | DeveloperAgent, ProgramManager |
+| **testing** | `test-planning` | `testing/test-planning` | Test strategy and coverage planning | TesterAgent |
+| **testing** | `unit-testing` | `testing/unit-testing` | JUnit 5 unit test patterns | TesterAgent |
+| **testing** | `integration-testing` | `testing/integration-testing` | File I/O and component integration tests | TesterAgent |
+| **testing** | `mocking` | `testing/mocking` | Mockito dependency mocking | TesterAgent |
+| **testing** | `test-data` | `testing/test-data` | Test fixtures and data setup | TesterAgent |
+| **testing** | `test-execution` | `testing/test-execution` | Run tests and generate JaCoCo reports | TesterAgent |
+| **devops** | `docker` | `devops/docker` | Multi-stage Dockerfile best practices | DevOpsAgent, SecurityAgent |
+| **devops** | `github-actions` | `devops/github-actions` | GitHub Actions workflow authoring | DevOpsAgent |
+| **devops** | `azure-deployment` | `devops/azure-deployment` | Azure Web App for Containers deployment | DevOpsAgent |
+| **devops** | `cicd-practices` | `devops/cicd-practices` | Pipeline security and quality gates | DevOpsAgent, SecurityAgent |
+| **build** | `build-validation` | `build/build-validation` | Maven build and validation workflow | DeveloperAgent, DevOpsAgent |
+| **security** | `code-scanning` | `security/code-scanning` | OWASP, SCA, container vulnerability scanning | SecurityAgent, DevOpsAgent |
+| **diagrams** | `plantuml-links` | `diagrams/plantuml-links` | Generate viewable PlantUML URLs | DiagramAgent |
+
+### End-to-End Translation Workflow
+
+Agents hand off to each other automatically. The full PL/I → Java pipeline:
+
+```
+1. @ProgramManager  → Reads PL/I, writes translation/ specs (never touches Java)
+        ↓ handoff
+2. @DeveloperAgent  → Implements Java 21 from specs in translation/
+        ↓ handoff
+3. @TesterAgent     → Creates and runs JUnit 5 tests, reports bugs
+        ↓
+4. @SecurityAgent   → Scans java-implementation/ for vulnerabilities
+        ↓
+5. @DevOpsAgent     → CI/CD pipelines, Docker, Azure deployment
+        ↓
+6. @DiagramAgent    → C4 architecture diagrams in docs/diagrams/c4/
+```
+
+### Automated Agentic Workflows
+
+Two GitHub Actions workflows are pre-configured to run agents automatically:
+
+| Workflow | Trigger | What It Does |
+|----------|---------|--------------|
+| **security-review-java** | Push to `main` with commit message containing `"adding java"` | Runs SecurityAgent scan; if vulnerabilities found, invokes DeveloperAgent to fix them and opens a PR |
+| **update-readme** | Push to `main` | Analyzes repo structure and creates a PR to update `README.md` |
+
+**To trigger the security workflow:**
+```bash
+git commit -m "feat: adding java implementation of customer service"
+git push
+# → SecurityAgent scans automatically; PR with fixes created if needed
+```
+
+> 💡 **Tip:** The `.github/copilot-instructions.md` file provides Copilot with repository-level context so agents understand the project conventions without needing extra prompting.
+
+---
+
 ## Quick Start
 
 ### 1. Prerequisites
