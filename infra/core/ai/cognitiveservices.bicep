@@ -14,7 +14,7 @@ param disableLocalAuth bool = false
 
 param deployments array = []
 
-resource cognitiveServices 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
+resource cognitiveServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: name
   location: location
   tags: tags
@@ -32,7 +32,7 @@ resource cognitiveServices 'Microsoft.CognitiveServices/accounts@2023-10-01-prev
 }
 
 @batchSize(1)
-resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = [for deployment in deployments: {
+resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = [for deployment in deployments: {
   parent: cognitiveServices
   name: deployment.name
   properties: {
@@ -49,4 +49,4 @@ output id string = cognitiveServices.id
 output name string = cognitiveServices.name
 output endpoint string = cognitiveServices.properties.endpoint
 output host string = split(cognitiveServices.properties.endpoint, '/')[2]
-output key string = cognitiveServices.listKeys().key1
+output aiServicesEndpoint string = 'https://${customSubDomainName}.services.ai.azure.com'

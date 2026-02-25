@@ -28,8 +28,12 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
   location: location
   tags: tags
   sku: sku
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
-    authOptions: authOptions
+    // authOptions must be null when disableLocalAuth=true (Azure REST API requirement)
+    authOptions: disableLocalAuth ? null : authOptions
     disableLocalAuth: disableLocalAuth
     encryptionWithCmk: encryptionWithCmk
     hostingMode: hostingMode
@@ -44,4 +48,4 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
 output id string = searchService.id
 output name string = searchService.name
 output endpoint string = 'https://${searchService.name}.search.windows.net/'
-output adminKey string = searchService.listAdminKeys().primaryKey
+output principalId string = searchService.identity.principalId

@@ -54,4 +54,3 @@ output id string = storageAccount.id
 output name string = storageAccount.name
 output primaryEndpoints object = storageAccount.properties.primaryEndpoints
 output blobEndpoint string = storageAccount.properties.primaryEndpoints.blob
-output primaryKey string = storageAccount.listKeys().keys[0].value
