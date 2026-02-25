@@ -62,10 +62,54 @@ resource api 'Microsoft.ApiManagement/service/apis@2023-05-01-preview' = {
     displayName: 'MCP Server API'
     apiRevision: '1'
     description: 'Model Context Protocol Server API for PDF search and retrieval'
-    subscriptionRequired: false
+    subscriptionRequired: true
     path: 'mcp'
     protocols: ['https']
     isCurrent: true
+    subscriptionKeyParameterNames: {
+      header: 'Ocp-Apim-Subscription-Key'
+      query: 'subscription-key'
+    }
+  }
+}
+
+// API-level policy with rate limiting and CORS
+resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2023-05-01-preview' = {
+  parent: api
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''
+<policies>
+  <inbound>
+    <base />
+    <rate-limit calls="100" renewal-period="60" />
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>*</origin>
+      </allowed-origins>
+      <allowed-methods>
+        <method>GET</method>
+        <method>POST</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>Content-Type</header>
+        <header>x-api-key</header>
+        <header>Ocp-Apim-Subscription-Key</header>
+      </allowed-headers>
+    </cors>
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+'''
   }
 }
 
