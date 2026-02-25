@@ -58,6 +58,9 @@ param blobContainers array = [
   {
     name: 'documents'
   }
+  {
+    name: 'pdf-images'
+  }
 ]
 
 // Generate unique resource names
@@ -87,6 +90,7 @@ module searchService 'core/search/search-services.bicep' = {
       name: searchServiceSku
     }
     semanticSearch: 'free'
+    disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
   }
 }
 
@@ -98,6 +102,7 @@ module storageAccount 'core/storage/storage-account.bicep' = {
     location: location
     tags: tags
     containers: blobContainers
+    allowSharedKeyAccess: false
   }
 }
 
@@ -110,6 +115,7 @@ module openAi 'core/ai/cognitiveservices.bicep' = {
     tags: tags
     kind: 'OpenAI'
     customSubDomainName: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+    disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
     deployments: concat(
       openAiConfig.deployEmbeddings ? [{
         name: 'embeddings'
@@ -136,6 +142,19 @@ module openAi 'core/ai/cognitiveservices.bicep' = {
         }
       }] : []
     )
+  }
+}
+
+// Azure AI Foundry Services (multi-service resource for skillset billing)
+module aiFoundryServices 'core/ai/cognitiveservices.bicep' = {
+  name: 'ai-foundry-services'
+  params: {
+    name: 'aifs-${resourceToken}'
+    location: location
+    tags: tags
+    kind: 'AIServices'
+    customSubDomainName: 'aifs-${resourceToken}'
+    disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
   }
 }
 
@@ -210,26 +229,6 @@ module mcpServer 'core/host/container-app.bicep' = {
     external: false  // INTERNAL ONLY - no direct external access
     secrets: [
       {
-        name: 'search-endpoint'
-        value: searchService.outputs.endpoint
-      }
-      {
-        name: 'search-key'
-        value: searchService.outputs.adminKey
-      }
-      {
-        name: 'storage-connection-string'
-        value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.outputs.name};AccountKey=${storageAccount.outputs.primaryKey};EndpointSuffix=${environment().suffixes.storage}'
-      }
-      {
-        name: 'openai-endpoint'
-        value: openAi.outputs.endpoint
-      }
-      {
-        name: 'openai-key'
-        value: openAi.outputs.key
-      }
-      {
         name: 'server-api-key'
         value: generatedApiKey
       }
@@ -237,19 +236,11 @@ module mcpServer 'core/host/container-app.bicep' = {
     env: [
       {
         name: 'SEARCH_ENDPOINT'
-        secretRef: 'search-endpoint'
-      }
-      {
-        name: 'SEARCH_KEY'
-        secretRef: 'search-key'
+        value: searchService.outputs.endpoint
       }
       {
         name: 'SEARCH_INDEX'
         value: searchIndexName
-      }
-      {
-        name: 'STORAGE_CONNECTION_STRING'
-        secretRef: 'storage-connection-string'
       }
       {
         name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -261,11 +252,7 @@ module mcpServer 'core/host/container-app.bicep' = {
       }
       {
         name: 'AZURE_OPENAI_ENDPOINT'
-        secretRef: 'openai-endpoint'
-      }
-      {
-        name: 'AZURE_OPENAI_KEY'
-        secretRef: 'openai-key'
+        value: openAi.outputs.endpoint
       }
       {
         name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
@@ -274,6 +261,14 @@ module mcpServer 'core/host/container-app.bicep' = {
       {
         name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
         value: 'chat'
+      }
+      {
+        name: 'AI_FOUNDRY_SERVICES_ENDPOINT'
+        value: aiFoundryServices.outputs.endpoint
+      }
+      {
+        name: 'AZURE_CLIENT_ID'  // User-assigned MI client ID - used by DefaultAzureCredential for deterministic MI auth
+        value: managedIdentity.outputs.clientId
       }
       {
         name: 'SERVER_API_KEY'
@@ -323,6 +318,16 @@ module searchContributorRole 'core/security/role.bicep' = {
   }
 }
 
+// Grant Search Index Data Reader role - required for read/query operations (separate from Contributor)
+module searchReaderRole 'core/security/role.bicep' = {
+  name: 'search-reader-role'
+  params: {
+    principalId: managedIdentity.outputs.principalId
+    roleDefinitionId: 'acdd72a7-3385-48ef-bd42-f606fba81ae7' // Search Index Data Reader
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Grant ACR pull permissions to the container app managed identity
 module acrPullRole 'core/security/role.bicep' = {
   name: 'acr-pull-role'
@@ -349,6 +354,43 @@ module openAiUserRole 'core/security/role.bicep' = {
   params: {
     principalId: managedIdentity.outputs.principalId
     roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Role assignments for search service system-assigned MI (indexer pipeline)
+module searchStorageReaderRole 'core/security/role.bicep' = {
+  name: 'search-storage-reader-role'
+  params: {
+    principalId: searchService.outputs.principalId
+    roleDefinitionId: '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1' // Storage Blob Data Reader
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module searchStorageContributorRole 'core/security/role.bicep' = {
+  name: 'search-storage-contributor-role'
+  params: {
+    principalId: searchService.outputs.principalId
+    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor (knowledge store)
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module searchOpenAiUserRole 'core/security/role.bicep' = {
+  name: 'search-openai-user-role'
+  params: {
+    principalId: searchService.outputs.principalId
+    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module searchCognitiveServicesUserRole 'core/security/role.bicep' = {
+  name: 'search-cognitive-services-user-role'
+  params: {
+    principalId: searchService.outputs.principalId
+    roleDefinitionId: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User (AIServices billing)
     principalType: 'ServicePrincipal'
   }
 }
@@ -386,3 +428,5 @@ output MCP_PUBLIC_ENDPOINT string = deployApim ? '${apim.outputs.mcpApiUrl}/api/
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
 output MANAGED_IDENTITY_NAME string = managedIdentity.outputs.name
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
+output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
+output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

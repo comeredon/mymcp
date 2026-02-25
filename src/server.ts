@@ -1,43 +1,43 @@
 // src/server.ts
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import {
-  SearchClient,
-  AzureKeyCredential
-} from "@azure/search-documents";
+import { DefaultAzureCredential } from "@azure/identity";
+import { SearchClient } from "@azure/search-documents";
 
 // Define the structure of our search documents
 interface SearchDocument {
-  id: string;
-  title?: string;
-  file_name?: string;
-  chunk?: string;
-  content?: string;
+  content_id: string;
+  text_document_id?: string;
+  image_document_id?: string;
+  document_title?: string;
   content_text?: string;
-  source_url?: string;
-  page_number?: number;
-  docId?: string;
+  content_path?: string;
+  location_metadata?: {
+    page_number?: number;
+    bounding_polygons?: string;
+  };
+  // Vector field: not retrievable in results but required for vector search query field targeting
+  content_embedding?: number[];
 }
 
 const {
   SEARCH_ENDPOINT,
-  SEARCH_KEY,
   SEARCH_INDEX
 } = process.env;
 
-if (!SEARCH_ENDPOINT || !SEARCH_KEY || !SEARCH_INDEX) {
-  throw new Error("Missing required env vars.");
+if (!SEARCH_ENDPOINT || !SEARCH_INDEX) {
+  throw new Error("Missing required env vars: SEARCH_ENDPOINT, SEARCH_INDEX");
 }
 
 const searchClient = new SearchClient<SearchDocument>(
   SEARCH_ENDPOINT,
   SEARCH_INDEX,
-  new AzureKeyCredential(SEARCH_KEY)
+  new DefaultAzureCredential()
 );
 
 // ---- Express App Setup ----
 const app = express();
-app.use(cors());
+app.use(cors({ origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*' }));
 app.use(express.json());
 
 // Health check endpoint (no auth required)
@@ -70,17 +70,24 @@ app.post('/api/search', async (req: Request, res: Response) => {
     const results = await searchClient.search(query, {
       top,
       includeTotalCount: false,
-      // Remove the problematic vectorSearchOptions for now
+      queryType: "semantic",
+      semanticSearchOptions: { configurationName: "semantic-config" },
+      vectorSearchOptions: {
+        queries: [{ kind: "text", text: query, kNearestNeighborsCount: top, fields: ["content_embedding"] }]
+      },
+      select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
     });
 
     const items: any[] = [];
     for await (const r of results.results) {
       const doc = r.document as SearchDocument;
       items.push({
-        id: doc.id,
-        title: doc.title ?? doc.file_name ?? doc.id,
-        text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
-        url: doc.source_url ?? null,
+        id: doc.content_id,
+        title: doc.document_title ?? doc.content_id,
+        text: doc.content_text ?? "",
+        type: doc.image_document_id ? "image" : "text",
+        imagePath: doc.content_path ?? null,
+        pageNumber: doc.location_metadata?.page_number ?? null,
         score: r.score
       });
     }
@@ -104,11 +111,11 @@ app.post('/api/fetch', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'ID parameter is required' });
     }
 
-    // Assume index stores per-chunk with a shared docId field; adjust to your schema
-    const filter = `docId eq '${id.replace(/'/g, "''")}'`;
+    // Fetch all text chunks for the document by text_document_id
+    const filter = `text_document_id eq '${id.replace(/'/g, "''")}'`;
     const results = await searchClient.search("*", {
       filter,
-      top: 1000
+      top: 500
     });
 
     const chunks: SearchDocument[] = [];
@@ -116,11 +123,10 @@ app.post('/api/fetch', async (req: Request, res: Response) => {
       chunks.push(r.document as SearchDocument);
     }
 
-    // optional page filtering if you store page numbers in the index
     let text = chunks
-      .filter(c => !pages || pages.includes(Number(c.page_number ?? 0)))
-      .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
-      .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
+      .filter(c => !pages || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
+      .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
+      .map(c => c.content_text ?? "")
       .join("\n\n");
 
     res.json({ text, chunks: chunks.length });
@@ -145,7 +151,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         jsonrpc: "2.0",
         id: req.body.id,
         result: {
-          protocolVersion: "2025-06-18",
+          protocolVersion: "2024-11-05",
           capabilities: {
             tools: {},
             logging: {}
@@ -268,16 +274,24 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           const searchResults = await searchClient.search(query, {
             top: Math.min(top, 20),
             includeTotalCount: true,
+            queryType: "semantic",
+            semanticSearchOptions: { configurationName: "semantic-config" },
+            vectorSearchOptions: {
+              queries: [{ kind: "text", text: query, kNearestNeighborsCount: Math.min(top, 20), fields: ["content_embedding"] }]
+            },
+            select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
           });
           
           const searchItems: any[] = [];
           for await (const r of searchResults.results) {
             const doc = r.document as SearchDocument;
             searchItems.push({
-              id: doc.id,
-              title: doc.title ?? doc.file_name ?? doc.id,
-              text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
-              url: doc.source_url ?? null,
+              id: doc.content_id,
+              title: doc.document_title ?? doc.content_id,
+              text: doc.content_text ?? "",
+              type: doc.image_document_id ? "image" : "text",
+              imagePath: doc.content_path ?? null,
+              pageNumber: doc.location_metadata?.page_number ?? null,
               score: r.score
             });
           }
@@ -313,10 +327,10 @@ app.post('/api/tools', async (req: Request, res: Response) => {
             });
           }
 
-          const filter = `docId eq '${docId.replace(/'/g, "''")}'`;
+          const filter = `text_document_id eq '${docId.replace(/'/g, "''")}'`;
           const fetchResults = await searchClient.search("*", {
             filter,
-            top: 1000
+            top: 500
           });
 
           const fetchChunks: SearchDocument[] = [];
@@ -325,9 +339,9 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           }
 
           let text = fetchChunks
-            .filter(c => !pages.length || pages.includes(Number(c.page_number ?? 0)))
-            .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
-            .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
+            .filter(c => !pages.length || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
+            .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
+            .map(c => c.content_text ?? "")
             .join("\n\n");
 
           return res.json({
@@ -393,16 +407,24 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         const searchResults = await searchClient.search(query, {
           top: Math.min(top, 20),
           includeTotalCount: true,
+          queryType: "semantic",
+          semanticSearchOptions: { configurationName: "semantic-config" },
+          vectorSearchOptions: {
+            queries: [{ kind: "text", text: query, kNearestNeighborsCount: Math.min(top, 20), fields: ["content_embedding"] }]
+          },
+          select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
         });
         
         const searchItems: any[] = [];
         for await (const r of searchResults.results) {
           const doc = r.document as SearchDocument;
           searchItems.push({
-            id: doc.id,
-            title: doc.title ?? doc.file_name ?? doc.id,
-            text: doc.content_text ?? doc.chunk ?? doc.content ?? "",
-            url: doc.source_url ?? null,
+            id: doc.content_id,
+            title: doc.document_title ?? doc.content_id,
+            text: doc.content_text ?? "",
+            type: doc.image_document_id ? "image" : "text",
+            imagePath: doc.content_path ?? null,
+            pageNumber: doc.location_metadata?.page_number ?? null,
             score: r.score
           });
         }
@@ -421,10 +443,10 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'Document ID is required for fetch' });
         }
 
-        const filter = `docId eq '${docId.replace(/'/g, "''")}'`;
+        const filter = `text_document_id eq '${docId.replace(/'/g, "''")}'`;
         const fetchResults = await searchClient.search("*", {
           filter,
-          top: 1000
+          top: 500
         });
 
         const fetchChunks: SearchDocument[] = [];
@@ -433,9 +455,9 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         }
 
         let text = fetchChunks
-          .filter(c => !pages.length || pages.includes(Number(c.page_number ?? 0)))
-          .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
-          .map(c => c.content_text ?? c.chunk ?? c.content ?? "")
+          .filter(c => !pages.length || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
+          .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
+          .map(c => c.content_text ?? "")
           .join("\n\n");
 
         const fetchResult = {
