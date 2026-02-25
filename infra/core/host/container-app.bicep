@@ -54,9 +54,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: targetPort
         transport: 'http'
         corsPolicy: {
-          allowedOrigins: ['*']
-          allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-          allowedHeaders: ['*']
+          allowedOrigins: ['https://*.azure-api.net']
+          allowedMethods: ['GET', 'POST', 'OPTIONS']
+          allowedHeaders: ['Content-Type', 'x-api-key']
           allowCredentials: false
         }
       }

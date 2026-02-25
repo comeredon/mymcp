@@ -323,7 +323,7 @@ module searchReaderRole 'core/security/role.bicep' = {
   name: 'search-reader-role'
   params: {
     principalId: managedIdentity.outputs.principalId
-    roleDefinitionId: 'acdd72a7-3385-48ef-bd42-f606fba81ae7' // Search Index Data Reader
+    roleDefinitionId: '1407120a-92aa-4202-b7e9-c0e197c71c8f' // Search Index Data Reader
     principalType: 'ServicePrincipal'
   }
 }
@@ -395,6 +395,17 @@ module searchCognitiveServicesUserRole 'core/security/role.bicep' = {
   }
 }
 
+// Grant Search Service Contributor role to search service system MI
+// Required when disableLocalAuth=true for indexer data-plane management (data sources, skillsets, indexers)
+module searchServiceContributorRole 'core/security/role.bicep' = {
+  name: 'search-service-contributor-role'
+  params: {
+    principalId: searchService.outputs.principalId
+    roleDefinitionId: '7ca78c08-252a-4471-8644-bb5ff32d4ba0' // Search Service Contributor
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Outputs
 output AZURE_LOCATION string = location
 output AZURE_RESOURCE_GROUP_NAME string = resourceGroup().name
@@ -410,6 +421,7 @@ output SEARCH_ENDPOINT string = searchService.outputs.endpoint
 output SEARCH_INDEX_NAME string = searchIndexName
 
 output STORAGE_ACCOUNT_NAME string = storageAccount.outputs.name
+output STORAGE_ACCOUNT_ID string = storageAccount.outputs.id
 output STORAGE_BLOB_ENDPOINT string = storageAccount.outputs.blobEndpoint
 
 output AZURE_OPENAI_NAME string = openAi.outputs.name
@@ -422,11 +434,9 @@ output APIM_GATEWAY_URL string = deployApim ? apim.outputs.gatewayUrl : ''
 output APIM_MCP_API_URL string = deployApim ? apim.outputs.mcpApiUrl : ''
 
 output MCP_SERVER_INTERNAL_URI string = mcpServer.outputs.uri
-output MCP_SERVER_API_KEY string = generatedApiKey
-output MCP_PUBLIC_ENDPOINT string = deployApim ? '${apim.outputs.mcpApiUrl}/api/tools' : mcpServer.outputs.uri
-
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
 output MANAGED_IDENTITY_NAME string = managedIdentity.outputs.name
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
 output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
+output AI_FOUNDRY_SERVICES_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
 output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

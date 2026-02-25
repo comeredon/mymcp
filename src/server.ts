@@ -1,6 +1,8 @@
 // src/server.ts
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { DefaultAzureCredential } from "@azure/identity";
 import { SearchClient } from "@azure/search-documents";
 
@@ -37,8 +39,38 @@ const searchClient = new SearchClient<SearchDocument>(
 
 // ---- Express App Setup ----
 const app = express();
-app.use(cors({ origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*' }));
-app.use(express.json());
+
+// Security headers
+app.use(helmet());
+
+// Rate limiting - 100 requests per minute per IP
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+app.use(limiter);
+
+app.use(cors({ origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [] }));
+app.use(express.json({ limit: '1mb' }));
+
+// API key authentication middleware (skip for health check)
+const SERVER_API_KEY = process.env.SERVER_API_KEY;
+function authenticateApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (!SERVER_API_KEY) {
+    // If no key is configured, deny access (fail-closed)
+    res.status(503).json({ error: 'Server not configured for authentication' });
+    return;
+  }
+  const apiKey = req.headers['x-api-key'] as string;
+  if (!apiKey || apiKey !== SERVER_API_KEY) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
 
 // Health check endpoint (no auth required)
 app.get('/health', async (req: Request, res: Response) => {
@@ -59,21 +91,27 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 // Search endpoint - semantic search over indexed PDFs
-app.post('/api/search', async (req: Request, res: Response) => {
+app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) => {
   try {
     const { query, top = 5 } = req.body;
     
-    if (!query) {
-      return res.status(400).json({ error: 'Query parameter is required' });
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query parameter is required and must be a string' });
     }
 
+    if (query.length > 1000) {
+      return res.status(400).json({ error: 'Query must be 1000 characters or fewer' });
+    }
+
+    const sanitizedTop = Math.min(Math.max(Number(top) || 5, 1), 20);
+
     const results = await searchClient.search(query, {
-      top,
+      top: sanitizedTop,
       includeTotalCount: false,
       queryType: "semantic",
       semanticSearchOptions: { configurationName: "semantic-config" },
       vectorSearchOptions: {
-        queries: [{ kind: "text", text: query, kNearestNeighborsCount: top, fields: ["content_embedding"] }]
+        queries: [{ kind: "text", text: query, kNearestNeighborsCount: sanitizedTop, fields: ["content_embedding"] }]
       },
       select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
     });
@@ -95,24 +133,26 @@ app.post('/api/search', async (req: Request, res: Response) => {
     res.json({ results: items });
   } catch (error) {
     console.error('Search error:', error);
-    res.status(500).json({ 
-      error: 'Search failed', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    });
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
 // Fetch endpoint - return full text (or aggregate chunks) by doc id
-app.post('/api/fetch', async (req: Request, res: Response) => {
+app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) => {
   try {
     const { id, pages }: { id: string; pages?: number[] } = req.body;
     
-    if (!id) {
-      return res.status(400).json({ error: 'ID parameter is required' });
+    if (!id || typeof id !== 'string') {
+      return res.status(400).json({ error: 'ID parameter is required and must be a string' });
+    }
+
+    // Validate id format - only allow alphanumeric, hyphens, underscores, dots
+    if (!/^[\w.\-]+$/.test(id)) {
+      return res.status(400).json({ error: 'Invalid document ID format' });
     }
 
     // Fetch all text chunks for the document by text_document_id
-    const filter = `text_document_id eq '${id.replace(/'/g, "''")}'`;
+    const filter = `text_document_id eq '${id}'`;
     const results = await searchClient.search("*", {
       filter,
       top: 500
@@ -132,15 +172,12 @@ app.post('/api/fetch', async (req: Request, res: Response) => {
     res.json({ text, chunks: chunks.length });
   } catch (error) {
     console.error('Fetch error:', error);
-    res.status(500).json({ 
-      error: 'Fetch failed', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    });
+    res.status(500).json({ error: 'Fetch failed' });
   }
 });
 
 // MCP-style tools endpoint that accepts tool calls
-app.post('/api/tools', async (req: Request, res: Response) => {
+app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) => {
   try {
     console.log('Tools request body:', JSON.stringify(req.body, null, 2));
     
@@ -316,7 +353,7 @@ app.post('/api/tools', async (req: Request, res: Response) => {
           const docId = args.id || '';
           const pages = args.pages || [];
 
-          if (!docId) {
+          if (!docId || typeof docId !== 'string') {
             return res.status(400).json({
               jsonrpc: "2.0",
               id: req.body.id,
@@ -327,7 +364,18 @@ app.post('/api/tools', async (req: Request, res: Response) => {
             });
           }
 
-          const filter = `text_document_id eq '${docId.replace(/'/g, "''")}'`;
+          if (!/^[\w.\-]+$/.test(docId)) {
+            return res.status(400).json({
+              jsonrpc: "2.0",
+              id: req.body.id,
+              error: {
+                code: -32602,
+                message: "Invalid document ID format"
+              }
+            });
+          }
+
+          const filter = `text_document_id eq '${docId}'`;
           const fetchResults = await searchClient.search("*", {
             filter,
             top: 500
@@ -439,11 +487,15 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         const docId = args.id || args.document_id || '';
         const pages = args.pages || [];
 
-        if (!docId) {
+        if (!docId || typeof docId !== 'string') {
           return res.status(400).json({ error: 'Document ID is required for fetch' });
         }
 
-        const filter = `text_document_id eq '${docId.replace(/'/g, "''")}'`;
+        if (!/^[\w.\-]+$/.test(docId)) {
+          return res.status(400).json({ error: 'Invalid document ID format' });
+        }
+
+        const filter = `text_document_id eq '${docId}'`;
         const fetchResults = await searchClient.search("*", {
           filter,
           top: 500
@@ -485,17 +537,13 @@ app.post('/api/tools', async (req: Request, res: Response) => {
         id: req.body.id,
         error: {
           code: -32603,
-          message: 'Internal error',
-          data: error instanceof Error ? error.message : 'Unknown error'
+          message: 'Internal error'
         }
       });
     }
     
     // Return legacy error format
-    res.status(500).json({ 
-      error: 'Tool execution failed', 
-      message: error instanceof Error ? error.message : 'Unknown error'
-    });
+    res.status(500).json({ error: 'Tool execution failed' });
   }
 });
 
