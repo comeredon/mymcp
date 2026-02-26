@@ -18,8 +18,8 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
     appLogsConfiguration: !empty(logAnalyticsWorkspaceName) ? {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logAnalyticsWorkspace.properties.customerId
-        sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
+        customerId: logAnalyticsWorkspace!.properties.customerId
+        sharedKey: logAnalyticsWorkspace!.listKeys().primarySharedKey
       }
     } : null
   }

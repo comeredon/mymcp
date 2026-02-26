@@ -309,9 +309,6 @@ module apim 'core/gateway/apim.bicep' = if (deployApim) {
     backendUrl: 'https://${mcpServer.outputs.uri}'
     apiKey: generatedApiKey
   }
-  dependsOn: [
-    mcpServer
-  ]
 }
 
 // Role assignments for the managed identity
@@ -435,9 +432,9 @@ output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = 'embeddings'
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = 'chat'
 
-output APIM_NAME string = deployApim ? apim.outputs.name : ''
-output APIM_GATEWAY_URL string = deployApim ? apim.outputs.gatewayUrl : ''
-output APIM_MCP_API_URL string = deployApim ? apim.outputs.mcpApiUrl : ''
+output APIM_NAME string = deployApim ? apim!.outputs.name : ''
+output APIM_GATEWAY_URL string = deployApim ? apim!.outputs.gatewayUrl : ''
+output APIM_MCP_API_URL string = deployApim ? apim!.outputs.mcpApiUrl : ''
 
 output MCP_SERVER_INTERNAL_URI string = mcpServer.outputs.uri
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name

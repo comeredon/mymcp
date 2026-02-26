@@ -16,5 +16,4 @@ services:
           npm ci --only=production
 
 infra:
-  provider:
-    type: bicep
+  provider: bicep
