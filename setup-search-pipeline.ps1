@@ -165,9 +165,9 @@ $indexBody = @{
             @{
                 name = "semantic-config"
                 prioritizedFields = @{
-                    contentFields  = @( @{ fieldName = "content_text" } )
-                    titleField     = @{ fieldName = "document_title" }
-                    keywordsFields = @( @{ fieldName = "document_title" } )
+                    prioritizedContentFields  = @( @{ fieldName = "content_text" } )
+                    titleField                = @{ fieldName = "document_title" }
+                    prioritizedKeywordsFields = @()
                 }
             }
         )
@@ -224,7 +224,7 @@ $skillsetBody = @{
             authIdentity  = $null
             inputs = @(
                 @{ name = "image";         source = "/document/normalized_images/*/data" }
-                @{ name = "imageDetail";   source = "=high" }
+                @{ name = "imageDetail";   source = "='high'" }
                 @{ name = "systemMessage"; source = "='You are a document analyst. Describe all text, charts, tables, diagrams, and meaningful visual elements in detail. Be concise but complete.'" }
                 @{ name = "userMessage";   source = "='Describe the content of this image.'" }
             )
@@ -324,13 +324,12 @@ $indexerBody = @{
     parameters = @{
         batchSize     = 1
         configuration = @{
-            dataToExtract              = "contentAndMetadata"
-            imageAction                = "generateNormalizedImages"
+            dataToExtract               = "contentAndMetadata"
             allowSkillsetToReadFileData = $true
         }
     }
     fieldMappings = @(
-        @{ sourceFieldName = "metadata_storage_path"; targetFieldName = "content_id" }
+        @{ sourceFieldName = "metadata_storage_path"; targetFieldName = "content_id"; mappingFunction = @{ name = "base64Encode" } }
         @{ sourceFieldName = "metadata_storage_name"; targetFieldName = "document_title" }
     )
     outputFieldMappings = @()
