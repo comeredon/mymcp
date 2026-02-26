@@ -273,5 +273,5 @@ resource fetchPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2
 output id string = apim.id
 output name string = apim.name
 output gatewayUrl string = apim.properties.gatewayUrl
-output portalUrl string = apim.properties.portalUrl
+output portalUrl string = apim.properties.portalUrl ?? ''
 output mcpApiUrl string = '${apim.properties.gatewayUrl}/mcp'
