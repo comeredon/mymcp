@@ -7,10 +7,10 @@ param(
     [string]$Location = "swedencentral",
     [string]$SearchIndexName = "pdf-index",
     [string]$ApiKey = "",
-    [switch]$DeployApim = $false,
+    [bool]$DeployApim = $true,
     [string]$ApimPublisherEmail = "admin@contoso.com",
     [string]$ApimPublisherName = "Contoso",
-    [switch]$DeployVNet = $false
+    [bool]$DeployVNet = $true
 )
 
 Write-Host "🚀 MCP Azure PDF Server - Unified Deployment" -ForegroundColor Cyan
@@ -86,18 +86,17 @@ if (-not [string]::IsNullOrEmpty($ApiKey)) {
     $deployParams += "serverApiKey=$ApiKey"
 }
 
+# Always pass APIM and VNet flags explicitly so Bicep gets the correct value
+$deployParams += "--parameters"
+$deployParams += "deployApim=$($DeployApim.ToString().ToLower())"
+$deployParams += "--parameters"
+$deployParams += "deployVNet=$($DeployVNet.ToString().ToLower())"
+
 if ($DeployApim) {
-    $deployParams += "--parameters"
-    $deployParams += "deployApim=true"
     $deployParams += "--parameters"
     $deployParams += "apimPublisherEmail=$ApimPublisherEmail"
     $deployParams += "--parameters"
     $deployParams += "apimPublisherName=$ApimPublisherName"
-}
-
-if ($DeployVNet) {
-    $deployParams += "--parameters"
-    $deployParams += "deployVNet=true"
 }
 
 az deployment group create @deployParams --output none
@@ -128,6 +127,8 @@ $mcpServerInternalUri = $outputs.MCP_SERVER_INTERNAL_URI.value
 $mcpPublicEndpoint = $outputs.MCP_PUBLIC_ENDPOINT.value
 $generatedApiKey = $outputs.MCP_SERVER_API_KEY.value
 $managedIdentityName = $outputs.MANAGED_IDENTITY_NAME.value
+$managedIdentityId = $outputs.MANAGED_IDENTITY_ID.value
+$containerAppName = $outputs.CONTAINER_APP_NAME.value
 $apimGatewayUrl = if ($outputs.APIM_GATEWAY_URL) { $outputs.APIM_GATEWAY_URL.value } else { "" }
 $apimName = if ($outputs.APIM_NAME) { $outputs.APIM_NAME.value } else { "" }
 
@@ -147,16 +148,47 @@ Write-Host "✅ Docker image built" -ForegroundColor Green
 Write-Host "`nPushing image to Azure Container Registry..." -ForegroundColor Yellow
 az acr login --name $acrName --output none
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ ACR login failed!" -ForegroundColor Red
-    exit 1
-}
-
-docker push $fullImageName --quiet
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Docker push failed!" -ForegroundColor Red
-    exit 1
+    Write-Host "⚠️  Local Docker push unavailable, using cloud build (az acr build)..." -ForegroundColor Yellow
+    az acr build --registry $acrName --image "${imageName}:latest" . --no-logs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ ACR cloud build failed!" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    docker push $fullImageName --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Docker push failed!" -ForegroundColor Red
+        exit 1
+    }
 }
 Write-Host "✅ Container image pushed successfully" -ForegroundColor Green
+
+# Ensure the container app's ACR registry uses the managed identity
+Write-Host "`nEnsuring ACR registry uses managed identity..." -ForegroundColor Yellow
+az containerapp registry set `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --server $acrLoginServer `
+    --identity $managedIdentityId `
+    --output none
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "⚠️  Failed to set registry identity (may already be configured)" -ForegroundColor Yellow
+}
+Write-Host "✅ ACR registry identity configured" -ForegroundColor Green
+
+# Update the container app to use the real ACR image
+# (Bicep deploys with a placeholder image to avoid MANIFEST_UNKNOWN on first deploy)
+Write-Host "`nUpdating container app with the real image..." -ForegroundColor Yellow
+az containerapp update `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --image $fullImageName `
+    --output none
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ Failed to update container app image!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "✅ Container app updated with image: $fullImageName" -ForegroundColor Green
 
 # Display deployment summary
 Write-Host ""

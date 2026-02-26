@@ -250,18 +250,90 @@ git push
 
 ### 1. Prerequisites
 
-- Azure CLI (`az --version`)
-- Docker Desktop (running)
-- Node.js 20+ (`node --version`)
-- Azure subscription with Contributor access
+Before deploying, ensure the following tools are installed and configured:
+
+| Tool | Minimum Version | Check Command | Purpose |
+|------|----------------|---------------|---------|
+| **Azure CLI** | 2.50+ | `az --version` | Deploy infrastructure and manage Azure resources |
+| **Node.js** | 20.x | `node --version` | Build the TypeScript project |
+| **npm** | 9.x+ | `npm --version` | Install dependencies and run build scripts |
+| **Docker** | 20.x+ | `docker --version` | Build and push container images |
+| **jq** | 1.6+ | `jq --version` | Parse deployment outputs (`deploy.sh` only) |
+| **Bash** | 4.x+ | `bash --version` | Run `deploy.sh` (Linux/macOS) |
+| **PowerShell** | 7.x+ | `pwsh --version` | Run `deploy.ps1` (Windows/cross-platform) |
+
+> **Note:** You only need **one** of Bash or PowerShell — pick whichever matches your environment.
+
+#### Azure Requirements
+
+- An **Azure subscription** with **Contributor** role (or higher)
+- Logged in to Azure CLI: `az login`
+- The following **Azure resource providers** must be registered on your subscription:
+  - `Microsoft.Search` (Azure AI Search)
+  - `Microsoft.Storage` (Storage Account)
+  - `Microsoft.CognitiveServices` (Azure OpenAI)
+  - `Microsoft.App` (Container Apps)
+  - `Microsoft.ContainerRegistry` (Container Registry)
+  - `Microsoft.OperationalInsights` (Log Analytics)
+  - `Microsoft.ManagedIdentity` (Managed Identity)
+  - `Microsoft.ApiManagement` (API Management — if using `--deploy-apim`)
+  - `Microsoft.Network` (Virtual Network — if using `--deploy-vnet`)
+
+You can register a provider with:
+```bash
+az provider register --namespace Microsoft.Search
+```
+
+#### Verify All Prerequisites
+
+```bash
+# Check all required tools
+az --version
+node --version
+npm --version
+docker --version
+jq --version
+
+# Verify Azure login
+az account show --query "{name:name, user:user.name}" -o table
+```
+
+#### Automated Setup with DevOps Agent (WSL2/Ubuntu)
+
+If you're using GitHub Copilot Chat, the `@DevOpsAgent` can install and verify all dependencies needed to deploy the MCP Azure PDF Server:
+
+```
+@DevOpsAgent setup WSL2 and deploy MCP Azure PDF Server
+```
+
+This uses the `quickstart/wsl2-environment-setup` skill to install Azure CLI, Node.js 20, npm, Docker, jq, register Azure resource providers, and validate everything is ready to deploy to Azure.
 
 ### 2. Deploy to Azure
+
+**Using Bash (Linux/macOS):**
+
+```bash
+# Login to Azure
+az login
+
+# Deploy everything (creates all resources including VNet, APIM, and internal-only Container App)
+./deploy.sh
+
+# Or customize deployment
+./deploy.sh \
+  --resource-group "my-rg" \
+  --location "eastus" \
+  --apim-publisher-email "admin@yourdomain.com" \
+  --apim-publisher-name "YourOrg"
+```
+
+**Using PowerShell (Windows/cross-platform):**
 
 ```powershell
 # Login to Azure
 az login
 
-# Deploy everything (creates all resources)
+# Deploy everything (creates all resources including VNet, APIM, and internal-only Container App)
 ./deploy.ps1 -ApimPublisherEmail "admin@yourdomain.com" -ApimPublisherName "YourOrg"
 
 # Or customize deployment
@@ -274,9 +346,10 @@ az login
 
 The deployment will create:
 - ✅ Resource group (or use existing)
+- ✅ Virtual Network (network isolation)
 - ✅ API Management gateway (public endpoint)
-- ✅ Container App (internal only)
-- ✅ Container Apps Environment
+- ✅ Container App (internal only — no direct external access)
+- ✅ Container Apps Environment (VNet-integrated)
 - ✅ Container Registry
 - ✅ Azure AI Search
 - ✅ Storage Account
@@ -284,7 +357,7 @@ The deployment will create:
 - ✅ Log Analytics
 - ✅ Managed Identity with RBAC roles
 
-**Important:** The Container App is deployed as **internal only**. All external access must go through API Management for security.
+**Important:** The Container App is deployed as **internal only** within a VNet. All external access must go through API Management. The deploy script first provisions infrastructure with a placeholder container image, then builds and pushes your real image to ACR, and finally updates the Container App to use it.
 
 ### 3. Index Your PDF Documents
 
@@ -559,6 +632,13 @@ az containerapp logs show --name <app-name> --resource-group <rg-name> --tail 50
 ### Validation
 
 Use the validation script to check your deployment:
+
+**Bash (Linux/macOS/WSL2):**
+```bash
+./validate-deployment.sh --resource-group <your-rg-name>
+```
+
+**PowerShell (Windows):**
 ```powershell
 .\validate-deployment.ps1 -ResourceGroupName <your-rg-name>
 ```
@@ -569,6 +649,32 @@ Use the validation script to check your deployment:
 - 📗 **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Comprehensive deployment guide
 - 📝 **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Validation checklist
 - 🤝 **[SHARING.md](./SHARING.md)** - Guide for sharing this repository
+
+## Cleanup
+
+To tear down all deployed Azure resources and free up costs:
+
+```bash
+# Delete resource group (with confirmation prompt)
+./cleanup.sh
+
+# Delete without confirmation
+./cleanup.sh --yes
+
+# Delete and purge soft-deleted resources (recommended before redeploying)
+./cleanup.sh --purge-all --yes
+
+# Delete a custom resource group
+./cleanup.sh --resource-group "my-rg" --purge-all --yes
+```
+
+> **Why purge?** Azure OpenAI and API Management use soft-delete by default. Use `--purge-all` to free the resource names for reuse.
+
+Or use the DevOps agent:
+
+```
+@DevOpsAgent clean up Azure resources
+```
 
 ## Contributing
 

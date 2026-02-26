@@ -47,8 +47,8 @@ param apimPublisherEmail string = 'admin@contoso.com'
 @description('Publisher name for APIM - REQUIRED if deployApim is true')
 param apimPublisherName string = 'Contoso'
 
-@description('Deploy Virtual Network for private networking')
-param deployVNet bool = false
+@description('Deploy Virtual Network for private networking (recommended for internal-only Container App)')
+param deployVNet bool = true
 
 @description('Blob container names to create in storage account')
 param blobContainers array = [
@@ -102,7 +102,8 @@ module storageAccount 'core/storage/storage-account.bicep' = {
     location: location
     tags: tags
     containers: blobContainers
-    allowSharedKeyAccess: false
+    allowSharedKeyAccess: false  // Security best practice from upstream
+    publicNetworkAccess: 'Enabled'
   }
 }
 
@@ -158,7 +159,100 @@ module aiFoundryServices 'core/ai/cognitiveservices.bicep' = {
   }
 }
 
-// Virtual Network (optional)
+// NOTE: Search pipeline (data source, index, skillset, indexer) is deployed via
+// setup-search-pipeline.sh after infrastructure deployment. ARM/Bicep cannot reliably
+// deploy search data-plane resources (child resources of Microsoft.Search/searchServices).
+
+// NSG for APIM subnet — required for APIM VNet integration
+resource apimNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = if (deployVNet && deployApim) {
+  name: '${abbrs.networkNetworkSecurityGroups}apim-${resourceToken}'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowClientToApim'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '443'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 100
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowApimManagement'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '3443'
+          sourceAddressPrefix: 'ApiManagement'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 110
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowAzureLoadBalancer'
+        properties: {
+          protocol: '*'
+          sourcePortRange: '*'
+          destinationPortRange: '6390'
+          sourceAddressPrefix: 'AzureLoadBalancer'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 120
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowStorageOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '443'
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'Storage'
+          access: 'Allow'
+          priority: 100
+          direction: 'Outbound'
+        }
+      }
+      {
+        name: 'AllowSqlOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '1433'
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'Sql'
+          access: 'Allow'
+          priority: 110
+          direction: 'Outbound'
+        }
+      }
+      {
+        name: 'AllowAzureMonitorOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRanges: ['443', '1886']
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'AzureMonitor'
+          access: 'Allow'
+          priority: 120
+          direction: 'Outbound'
+        }
+      }
+    ]
+  }
+}
+
+// Virtual Network — provides network isolation so Container App stays internal-only
 module vnet 'core/network/vnet.bicep' = if (deployVNet) {
   name: 'vnet'
   params: {
@@ -170,10 +264,19 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
       {
         name: 'container-apps'
         addressPrefix: '10.0.0.0/23'
+        delegations: [
+          {
+            name: 'Microsoft.App.environments'
+            properties: {
+              serviceName: 'Microsoft.App/environments'
+            }
+          }
+        ]
       }
       {
         name: 'apim'
         addressPrefix: '10.0.2.0/24'
+        networkSecurityGroupId: (deployApim) ? apimNsg.id : null
       }
       {
         name: 'private-endpoints'
@@ -183,7 +286,7 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
   }
 }
 
-// Container apps environment
+// Container apps environment — deployed into VNet subnet when VNet is enabled
 module containerAppsEnvironment 'core/host/container-apps-environment.bicep' = {
   name: 'container-apps-environment'
   params: {
@@ -191,6 +294,20 @@ module containerAppsEnvironment 'core/host/container-apps-environment.bicep' = {
     location: location
     tags: tags
     logAnalyticsWorkspaceName: logAnalytics.outputs.name
+    infrastructureSubnetId: deployVNet ? vnet!.outputs.subnets[0].id : ''
+  }
+}
+
+// Private DNS zone for internal Container Apps Environment
+// Required so APIM (in the same VNet) can resolve internal Container App FQDNs
+module privateDnsZone 'core/network/private-dns-zone.bicep' = if (deployVNet) {
+  name: 'private-dns-zone'
+  params: {
+    zoneName: containerAppsEnvironment.outputs.domain
+    vnetId: vnet!.outputs.id
+    staticIp: containerAppsEnvironment.outputs.staticIp
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
@@ -217,6 +334,9 @@ module managedIdentity 'core/security/managed-identity.bicep' = {
 // MCP server container app (INTERNAL ONLY - accessed via APIM)
 module mcpServer 'core/host/container-app.bicep' = {
   name: 'mcp-server'
+  dependsOn: [
+    acrPullRole   // Ensure AcrPull role is assigned before the container app registers the ACR identity
+  ]
   params: {
     name: '${abbrs.appContainerApps}mcp-${resourceToken}'
     location: location
@@ -224,9 +344,12 @@ module mcpServer 'core/host/container-app.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.outputs.name
     containerRegistryName: containerRegistry.outputs.name
     containerName: 'mcp-azure-pdf'
-    imageName: 'mcp-azure-pdf'
+    // imageName intentionally omitted — defaults to MCR placeholder on first deploy.
+    // deploy.sh updates the container with the real ACR image after pushing it.
     managedIdentityName: managedIdentity.outputs.name
-    external: false  // INTERNAL ONLY - no direct external access
+    external: true   // Accessible within the VNet. The Container Apps Environment is internal (internal: true),
+                      // so the FQDN is only resolvable inside the VNet. APIM (in the same VNet) routes traffic here.
+    workloadProfileName: 'Consumption'
     secrets: [
       {
         name: 'server-api-key'
@@ -300,12 +423,15 @@ module apim 'core/gateway/apim.bicep' = if (deployApim) {
     tags: tags
     publisherEmail: apimPublisherEmail
     publisherName: apimPublisherName
+    sku: {
+      name: 'Developer'
+      capacity: 1
+    }
     backendUrl: 'https://${mcpServer.outputs.uri}'
     apiKey: generatedApiKey
+    virtualNetworkType: deployVNet ? 'External' : 'None'
+    subnetResourceId: deployVNet ? vnet!.outputs.subnets[1].id : ''
   }
-  dependsOn: [
-    mcpServer
-  ]
 }
 
 // Role assignments for the managed identity
@@ -395,7 +521,7 @@ module searchCognitiveServicesUserRole 'core/security/role.bicep' = {
   }
 }
 
-// Grant Search Service Contributor role to search service system MI
+// Grant Search Service Contributor role to search service system-assigned managed identity
 // Required when disableLocalAuth=true for indexer data-plane management (data sources, skillsets, indexers)
 module searchServiceContributorRole 'core/security/role.bicep' = {
   name: 'search-service-contributor-role'
@@ -429,14 +555,21 @@ output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = 'embeddings'
 output AZURE_OPENAI_CHAT_DEPLOYMENT string = 'chat'
 
-output APIM_NAME string = deployApim ? apim.outputs.name : ''
-output APIM_GATEWAY_URL string = deployApim ? apim.outputs.gatewayUrl : ''
-output APIM_MCP_API_URL string = deployApim ? apim.outputs.mcpApiUrl : ''
+output APIM_NAME string = deployApim ? apim!.outputs.name : ''
+output APIM_GATEWAY_URL string = deployApim ? apim!.outputs.gatewayUrl : ''
+output APIM_MCP_API_URL string = deployApim ? apim!.outputs.mcpApiUrl : ''
+#disable-next-line outputs-should-not-contain-secrets
+output APIM_SUBSCRIPTION_KEY string = deployApim ? apim!.outputs.subscriptionPrimaryKey : ''
 
+output CONTAINER_APP_NAME string = mcpServer.outputs.name
 output MCP_SERVER_INTERNAL_URI string = mcpServer.outputs.uri
-output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
+#disable-next-line outputs-should-not-contain-secrets
+output MCP_SERVER_API_KEY string = generatedApiKey
+output MCP_PUBLIC_ENDPOINT string = deployApim ? '${apim!.outputs.mcpApiUrl}/api/tools' : mcpServer.outputs.uri
+
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name  
 output MANAGED_IDENTITY_NAME string = managedIdentity.outputs.name
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
+output MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
 output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
 output AI_FOUNDRY_SERVICES_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
-output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

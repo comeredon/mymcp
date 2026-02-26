@@ -165,9 +165,9 @@ $indexBody = @{
             @{
                 name = "semantic-config"
                 prioritizedFields = @{
-                    contentFields  = @( @{ fieldName = "content_text" } )
+                    prioritizedContentFields  = @( @{ fieldName = "content_text" } )
                     titleField     = @{ fieldName = "document_title" }
-                    keywordsFields = @( @{ fieldName = "document_title" } )
+                    prioritizedKeywordsFields = @( @{ fieldName = "document_title" } )
                 }
             }
         )
@@ -224,7 +224,7 @@ $skillsetBody = @{
             authIdentity  = $null
             inputs = @(
                 @{ name = "image";         source = "/document/normalized_images/*/data" }
-                @{ name = "imageDetail";   source = "=high" }
+                @{ name = "imageDetail";   source = "='high'" }
                 @{ name = "systemMessage"; source = "='You are a document analyst. Describe all text, charts, tables, diagrams, and meaningful visual elements in detail. Be concise but complete.'" }
                 @{ name = "userMessage";   source = "='Describe the content of this image.'" }
             )

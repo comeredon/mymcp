@@ -15,6 +15,8 @@ Load skills from `.github/skills/` as needed:
 
 | When you need to... | Load skill |
 |---------------------|------------|
+| Deploy MCP Azure PDF Server | `quickstart/wsl2-environment-setup` |
+| Clean up / tear down Azure resources for MCP Azure PDF Server | `quickstart/wsl2-cleanup` |
 | Containerize Java app | `devops/docker` |
 | Create GitHub Actions workflows | `devops/github-actions` |
 | Deploy to Azure | `devops/azure-deployment` |

@@ -9,7 +9,7 @@ param containerRegistryName string
 param containerName string = 'main'
 param env array = []
 param external bool = true
-param imageName string
+param imageName string = ''
 param managedIdentityName string = ''
 param resources object = {
   cpu: '0.25'
@@ -21,6 +21,13 @@ param scale object = {
 }
 param secrets array = []
 param targetPort int = 80
+
+@description('Workload profile name to use. Set to Consumption for VNet-integrated environments.')
+param workloadProfileName string = ''
+
+// Use ACR image when imageName is provided, otherwise fallback to a public placeholder
+// This avoids MANIFEST_UNKNOWN errors on first deployment when the image hasn't been pushed yet
+var containerImage = !empty(imageName) ? '${containerRegistry.properties.loginServer}/${imageName}:latest' : 'mcr.microsoft.com/k8se/quickstart:latest'
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppsEnvironmentName
@@ -72,13 +79,14 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: containerName
-          image: '${containerRegistry.properties.loginServer}/${imageName}:latest'
+          image: containerImage
           env: env
           resources: resources
         }
       ]
       scale: scale
     }
+    workloadProfileName: !empty(workloadProfileName) ? workloadProfileName : null
   }
 }
 
