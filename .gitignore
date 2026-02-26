@@ -61,3 +61,5 @@ coverage/
 REVIEW_*.md
 *_INTERNAL.md
 CLEANUP_SUMMARY.md
+
+infra/main.json

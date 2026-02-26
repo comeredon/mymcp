@@ -12,7 +12,6 @@ param sku object = {
 }
 param publicNetworkAccess string = 'Enabled'
 param backendUrl string = ''
-param apiKeyHeaderName string = 'x-api-key'
 @secure()
 param apiKey string = ''
 
