@@ -1,4 +1,5 @@
 // src/server.ts
+import crypto from "crypto";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -65,7 +66,14 @@ function authenticateApiKey(req: Request, res: Response, next: NextFunction): vo
     return;
   }
   const apiKey = req.headers['x-api-key'] as string;
-  if (!apiKey || apiKey !== SERVER_API_KEY) {
+  if (!apiKey) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  // Timing-safe comparison to prevent timing attacks (OWASP A07)
+  const expected = Buffer.from(SERVER_API_KEY);
+  const provided = Buffer.from(apiKey);
+  if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -104,6 +112,8 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
     }
 
     const sanitizedTop = Math.min(Math.max(Number(top) || 5, 1), 20);
+    // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
+    const knn = Math.min(Math.max(sanitizedTop * 3, 50), 150);
 
     const results = await searchClient.search(query, {
       top: sanitizedTop,
@@ -111,7 +121,7 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
       queryType: "semantic",
       semanticSearchOptions: { configurationName: "semantic-config" },
       vectorSearchOptions: {
-        queries: [{ kind: "text", text: query, kNearestNeighborsCount: sanitizedTop, fields: ["content_embedding"] }]
+        queries: [{ kind: "text", text: query, kNearestNeighborsCount: knn, fields: ["content_embedding"] }]
       },
       select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
     });
@@ -155,7 +165,9 @@ app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) =
     const filter = `text_document_id eq '${id}'`;
     const results = await searchClient.search("*", {
       filter,
-      top: 500
+      top: 500,
+      // Exclude embedding vectors - not needed and very large (3072 floats)
+      select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
     });
 
     const chunks: SearchDocument[] = [];
@@ -179,8 +191,6 @@ app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) =
 // MCP-style tools endpoint that accepts tool calls
 app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) => {
   try {
-    console.log('Tools request body:', JSON.stringify(req.body, null, 2));
-    
     // Handle MCP protocol initialization and handshake
     if (req.body.method === 'initialize') {
       console.log('Handling MCP initialize method');
@@ -279,7 +289,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
       const toolName = req.body.params?.name;
       const args = req.body.params?.arguments || {};
       
-      console.log("MCP tools/call - Tool: %s, Args:", toolName, args);
+      console.log("MCP tools/call - Tool: %s", toolName);
 
       if (!toolName) {
         return res.status(400).json({
@@ -308,13 +318,16 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             });
           }
 
+          const sanitizedTopMcp = Math.min(Math.max(Number(top) || 5, 1), 20);
+          // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
+          const knn = Math.min(Math.max(sanitizedTopMcp * 3, 50), 150);
           const searchResults = await searchClient.search(query, {
-            top: Math.min(top, 20),
+            top: sanitizedTopMcp,
             includeTotalCount: true,
             queryType: "semantic",
             semanticSearchOptions: { configurationName: "semantic-config" },
             vectorSearchOptions: {
-              queries: [{ kind: "text", text: query, kNearestNeighborsCount: Math.min(top, 20), fields: ["content_embedding"] }]
+              queries: [{ kind: "text", text: query, kNearestNeighborsCount: knn, fields: ["content_embedding"] }]
             },
             select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
           });
@@ -342,7 +355,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
                   type: "text",
                   text: `Found ${searchItems.length} results for "${query}":\n\n` +
                         searchItems.map((item, index) => 
-                          `${index + 1}. ${item.title}\n${item.text.substring(0, 500)}...\n`
+                          `${index + 1}. ${item.title}\n${item.text.substring(0, 1500)}${item.text.length > 1500 ? '...' : ''}\n`
                         ).join('\n')
                 }
               ]
@@ -378,7 +391,9 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
           const filter = `text_document_id eq '${docId}'`;
           const fetchResults = await searchClient.search("*", {
             filter,
-            top: 500
+            top: 500,
+            // Exclude embedding vectors - not needed and very large (3072 floats)
+            select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
           });
 
           const fetchChunks: SearchDocument[] = [];
@@ -440,7 +455,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
       });
     }
 
-    console.log("Legacy format - Tool: %s, Args:", tool, args);
+    console.log("Legacy format - Tool: %s", tool);
 
     // Handle legacy format requests
     switch (tool.toLowerCase()) {
@@ -452,13 +467,16 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
           return res.status(400).json({ error: 'Search query is required' });
         }
 
+        const sanitizedTopLegacy = Math.min(Math.max(Number(top) || 5, 1), 20);
+        // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
+        const knnLegacy = Math.min(Math.max(sanitizedTopLegacy * 3, 50), 150);
         const searchResults = await searchClient.search(query, {
-          top: Math.min(top, 20),
+          top: sanitizedTopLegacy,
           includeTotalCount: true,
           queryType: "semantic",
           semanticSearchOptions: { configurationName: "semantic-config" },
           vectorSearchOptions: {
-            queries: [{ kind: "text", text: query, kNearestNeighborsCount: Math.min(top, 20), fields: ["content_embedding"] }]
+            queries: [{ kind: "text", text: query, kNearestNeighborsCount: knnLegacy, fields: ["content_embedding"] }]
           },
           select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
         });
@@ -498,7 +516,9 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
         const filter = `text_document_id eq '${docId}'`;
         const fetchResults = await searchClient.search("*", {
           filter,
-          top: 500
+          top: 500,
+          // Exclude embedding vectors - not needed and very large (3072 floats)
+          select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
         });
 
         const fetchChunks: SearchDocument[] = [];

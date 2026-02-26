@@ -226,7 +226,8 @@ module mcpServer 'core/host/container-app.bicep' = {
     containerName: 'mcp-azure-pdf'
     imageName: 'mcp-azure-pdf'
     managedIdentityName: managedIdentity.outputs.name
-    external: false  // INTERNAL ONLY - no direct external access
+    external: true  // Must be true for APIM Consumption tier - cannot reach internal Container Apps without VNet integration
+                    // Security enforced by SERVER_API_KEY middleware (fail-closed) + APIM subscription key
     secrets: [
       {
         name: 'server-api-key'
@@ -273,6 +274,11 @@ module mcpServer 'core/host/container-app.bicep' = {
       {
         name: 'SERVER_API_KEY'
         secretRef: 'server-api-key'
+      }
+      {
+        name: 'ALLOWED_ORIGINS'
+        // Allow requests originating from APIM (for any browser clients proxied through APIM)
+        value: deployApim ? 'https://${abbrs.apiManagementService}${resourceToken}.azure-api.net' : ''
       }
       {
         name: 'PORT'

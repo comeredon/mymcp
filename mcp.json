@@ -4,7 +4,8 @@
       "type": "http",
       "url": "${APIM_MCP_API_URL}/api/tools",
       "headers": {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Ocp-Apim-Subscription-Key": "${APIM_SUBSCRIPTION_KEY}"
       },
       "tools": ["search", "fetch"],
       "description": "MCP server for searching and retrieving PDF documents via Azure API Management"
