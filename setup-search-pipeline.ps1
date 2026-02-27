@@ -1,15 +1,19 @@
 # setup-search-pipeline.ps1
-# Deploys the Azure AI Search integrated vectorization pipeline (data source, index, skillset, indexer)
+# Deploys the Azure AI Search pipeline (data source, index, skillset, indexer)
 # using Foundry-aligned patterns: keyless billing (AIServicesByIdentity), managed identity auth,
-# Document Layout skill, ChatCompletion (GenAI Prompt) skill, and Azure OpenAI Embedding skill.
+# Document Layout (Document Intelligence) skill, ChatCompletion (GenAI Prompt) skill (Preview),
+# and Azure OpenAI Embedding skill.
 #
 # Prerequisites:
 #   1. Run 'azd up' first to deploy infrastructure.
 #   2. Run 'azd env get-values' to confirm environment values are available.
 #   3. RBAC roles must be propagated (may take a few minutes after deployment).
 #
-# API version: 2025-11-01-preview (required for Document Layout skill, ChatCompletion skill,
-# and AIServicesByIdentity keyless skillset billing — currently in public preview).
+# API version: 2025-05-01-Preview
+#   - DocumentIntelligenceLayoutSkill (text outputFormat)  ➜ 2025-05-01-Preview and later
+#   - TextSplit token-based chunking (azureOpenAITokens)   ➜ 2024-09-01-preview and later
+#   - ChatCompletionSkill (GenAI Prompt)                   ➜ public preview
+#   - AIServicesByIdentity keyless billing                 ➜ public preview
 
 param(
     [string]$IndexName = "pdf-index",
@@ -21,7 +25,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$apiVersion = "2025-11-01-preview"
+$apiVersion = "2025-05-01-Preview"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,7 +116,7 @@ Write-Host "  Data source created (MI-based, no storage keys)" -ForegroundColor 
 
 # ── Step 2: Index ────────────────────────────────────────────────────────────
 
-Write-Host "Step 2/4: Creating index ($IndexName)..." -ForegroundColor Yellow
+Write-Host "Step 2/5: Creating index ($IndexName)..." -ForegroundColor Yellow
 
 $indexBody = @{
     name = $IndexName
@@ -179,11 +183,11 @@ Write-Host "  Index created (3072-d HNSW, OpenAI vectorizer with keyless auth)" 
 
 # ── Step 3: Skillset ────────────────────────────────────────────────────────
 
-Write-Host "Step 3/4: Creating skillset (pdf-skillset)..." -ForegroundColor Yellow
+Write-Host "Step 3/5: Creating skillset (pdf-skillset)..." -ForegroundColor Yellow
 
 $skillsetBody = @{
     name = "pdf-skillset"
-    description = "Foundry-aligned pipeline: Document Layout for text/image extraction, GPT-4o for image verbalization, text-embedding-3-large for vector embeddings. Uses AIServicesByIdentity for keyless billing."
+    description = "Document Layout + token-based chunking + embeddings + image captions (chat completion). Keyless billing via AIServicesByIdentity."
     cognitiveServices = @{
         "@odata.type" = "#Microsoft.Azure.Search.AIServicesByIdentity"
         description   = "Keyless billing via search service system-assigned managed identity (preview)"
@@ -207,6 +211,7 @@ $skillsetBody = @{
         @{
             "@odata.type"       = "#Microsoft.Skills.Util.DocumentIntelligenceLayoutSkill"
             name                = "doc-layout-skill"
+            description         = "Uses Document Intelligence layout model for structure-aware chunking AND image extraction with location metadata (page, bounding polygon). To use indexer image extraction instead (simpler/cheaper), remove 'images' from extractionOptions and add imageAction: generateNormalizedImages to the indexer."
             context             = "/document"
             outputFormat        = "text"
             extractionOptions   = @("images", "locationMetadata")
@@ -217,10 +222,36 @@ $skillsetBody = @{
             )
         }
         @{
+            "@odata.type"      = "#Microsoft.Skills.Text.SplitSkill"
+            name               = "text-split-skill"
+            context            = "/document/text_sections/*"
+            textSplitMode      = "pages"
+            maximumPageLength   = 512
+            pageOverlapLength   = 64
+            unit               = "azureOpenAITokens"
+            inputs  = @( @{ name = "text"; source = "/document/text_sections/*/content" } )
+            outputs = @(
+                @{ name = "textItems";        targetName = "chunks" }
+                @{ name = "ordinalPositions"; targetName = "chunk_ordinals" }
+            )
+        }
+        @{
+            "@odata.type"  = "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill"
+            name           = "text-embedding-skill"
+            context        = "/document/text_sections/*/chunks/*"
+            resourceUri    = $openAiEndpoint
+            deploymentId   = "embeddings"
+            modelName      = "text-embedding-3-large"
+            dimensions     = 3072
+            authIdentity   = $null
+            inputs  = @( @{ name = "text"; source = "/document/text_sections/*/chunks/*" } )
+            outputs = @( @{ name = "embedding"; targetName = "content_embedding" } )
+        }
+        @{
             "@odata.type" = "#Microsoft.Skills.Custom.ChatCompletionSkill"
             name          = "image-verbalization-skill"
             context       = "/document/normalized_images/*"
-            uri           = "$openAiEndpoint/openai/deployments/chat/chat/completions"
+            uri           = "$($openAiEndpoint.TrimEnd('/'))/openai/deployments/chat/chat/completions?api-version=2024-10-21"
             authIdentity  = $null
             inputs = @(
                 @{ name = "image";         source = "/document/normalized_images/*/data" }
@@ -229,22 +260,10 @@ $skillsetBody = @{
                 @{ name = "userMessage";   source = "='Describe the content of this image.'" }
             )
             outputs = @(
-                @{ name = "response"; targetName = "verbalized_text" }
+                @{ name = "response"; targetName = "verbalized_image" }
             )
             responseFormat          = @{ type = "text" }
-            commonModelParameters   = @{ temperature = 0.3; maxTokens = 1024 }
-        }
-        @{
-            "@odata.type"  = "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill"
-            name           = "text-embedding-skill"
-            context        = "/document/text_sections/*"
-            resourceUri    = $openAiEndpoint
-            deploymentId   = "embeddings"
-            modelName      = "text-embedding-3-large"
-            dimensions     = 3072
-            authIdentity   = $null
-            inputs  = @( @{ name = "text"; source = "/document/text_sections/*/content" } )
-            outputs = @( @{ name = "embedding"; targetName = "content_embedding" } )
+            commonModelParameters   = @{ temperature = 0; maxTokens = 1024 }
         }
         @{
             "@odata.type"  = "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill"
@@ -255,7 +274,7 @@ $skillsetBody = @{
             modelName      = "text-embedding-3-large"
             dimensions     = 3072
             authIdentity   = $null
-            inputs  = @( @{ name = "text"; source = "/document/normalized_images/*/verbalized_text" } )
+            inputs  = @( @{ name = "text"; source = "/document/normalized_images/*/verbalized_image" } )
             outputs = @( @{ name = "embedding"; targetName = "content_embedding" } )
         }
     )
@@ -264,21 +283,12 @@ $skillsetBody = @{
             @{
                 targetIndexName     = $IndexName
                 parentKeyFieldName  = "text_document_id"
-                sourceContext        = "/document/text_sections/*"
+                sourceContext        = "/document/text_sections/*/chunks/*"
                 mappings = @(
-                    @{ name = "content_text";      source = "/document/text_sections/*/content" }
-                    @{ name = "content_embedding"; source = "/document/text_sections/*/content_embedding" }
+                    @{ name = "content_text";      source = "/document/text_sections/*/chunks/*" }
+                    @{ name = "content_embedding"; source = "/document/text_sections/*/chunks/*/content_embedding" }
                     @{ name = "content_path";      source = "/document/metadata_storage_path" }
                     @{ name = "document_title";    source = "/document/metadata_storage_name" }
-                    @{
-                        name          = "location_metadata"
-                        source        = $null
-                        sourceContext = "/document/text_sections/*"
-                        inputs = @(
-                            @{ name = "page_number";       source = "/document/text_sections/*/pageNumber" }
-                            @{ name = "bounding_polygons"; source = "/document/text_sections/*/boundingPolygons" }
-                        )
-                    }
                 )
             }
             @{
@@ -286,19 +296,10 @@ $skillsetBody = @{
                 parentKeyFieldName  = "image_document_id"
                 sourceContext        = "/document/normalized_images/*"
                 mappings = @(
-                    @{ name = "content_text";      source = "/document/normalized_images/*/verbalized_text" }
+                    @{ name = "content_text";      source = "/document/normalized_images/*/verbalized_image" }
                     @{ name = "content_embedding"; source = "/document/normalized_images/*/content_embedding" }
-                    @{ name = "content_path";      source = "/document/normalized_images/*/storagePath" }
+                    @{ name = "content_path";      source = "/document/metadata_storage_path" }
                     @{ name = "document_title";    source = "/document/metadata_storage_name" }
-                    @{
-                        name          = "location_metadata"
-                        source        = $null
-                        sourceContext = "/document/normalized_images/*"
-                        inputs = @(
-                            @{ name = "page_number";       source = "/document/normalized_images/*/pageNumber" }
-                            @{ name = "bounding_polygons"; source = "/document/normalized_images/*/boundingPolygons" }
-                        )
-                    }
                 )
             }
         )
@@ -309,12 +310,17 @@ $skillsetBody = @{
 } | ConvertTo-Json -Depth 15
 
 Invoke-SearchApi -Endpoint $searchEndpoint -Path "/skillsets/pdf-skillset" -Token $token -Body $skillsetBody
-Write-Host "  Skillset created (AIServicesByIdentity keyless billing, Document Layout + ChatCompletion + Embedding)" -ForegroundColor Green
+Write-Host "  Skillset created (AIServicesByIdentity, Layout + TextSplit + Embeddings + ChatCompletion)" -ForegroundColor Green
 
 # ── Step 4: Indexer ──────────────────────────────────────────────────────────
 
-Write-Host "Step 4/4: Creating indexer (pdf-indexer)..." -ForegroundColor Yellow
+Write-Host "Step 4/5: Creating indexer (pdf-indexer)..." -ForegroundColor Yellow
 
+# NOTE: Images are extracted by Document Intelligence (extractionOptions: ["images"]),
+# which provides location metadata (page, bounding polygon) for each image.
+# To switch back to simpler/cheaper indexer-based extraction, add
+#   imageAction = "generateNormalizedImages"
+# to the indexer configuration below, and remove "images" from the DI skill's extractionOptions.
 $indexerBody = @{
     name            = "pdf-indexer"
     dataSourceName  = "pdf-datasource"
@@ -325,13 +331,12 @@ $indexerBody = @{
         batchSize     = 1
         configuration = @{
             dataToExtract              = "contentAndMetadata"
-            imageAction                = "generateNormalizedImages"
             allowSkillsetToReadFileData = $true
         }
     }
     fieldMappings = @(
-        @{ sourceFieldName = "metadata_storage_path"; targetFieldName = "content_id" }
         @{ sourceFieldName = "metadata_storage_name"; targetFieldName = "document_title" }
+        @{ sourceFieldName = "metadata_storage_path"; targetFieldName = "content_path" }
     )
     outputFieldMappings = @()
 } | ConvertTo-Json -Depth 5
@@ -339,25 +344,34 @@ $indexerBody = @{
 Invoke-SearchApi -Endpoint $searchEndpoint -Path "/indexers/pdf-indexer" -Token $token -Body $indexerBody
 Write-Host "  Indexer created (manual trigger, MI auth to blob)" -ForegroundColor Green
 
+# ── Step 5: Trigger indexer run ──────────────────────────────────────────────
+
+Write-Host "Step 5/5: Triggering indexer run..." -ForegroundColor Yellow
+
+try {
+    Invoke-SearchApi -Endpoint $searchEndpoint -Path "/indexers/pdf-indexer/run" -Token $token -Body "{}" -Method "POST"
+    Write-Host "  Indexer run triggered" -ForegroundColor Green
+} catch {
+    Write-Host "  Indexer trigger failed (no documents in container yet?)" -ForegroundColor DarkYellow
+}
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 Write-Host ""
 Write-Host "Search pipeline deployed successfully!" -ForegroundColor Green
 Write-Host ""
-Write-Host "Pipeline architecture:" -ForegroundColor Cyan
-Write-Host "  Blob Storage (pdfs) --> Document Layout Skill --> Text Split" -ForegroundColor White
-Write-Host "                      --> Image Extraction --> GPT-4o Verbalization" -ForegroundColor White
-Write-Host "                      --> text-embedding-3-large (3072d) --> Index" -ForegroundColor White
+Write-Host "Pipeline:" -ForegroundColor Cyan
+Write-Host "  Blob Storage ($BlobContainer) -> Document Layout -> TextSplit (512 tokens) -> Embeddings (3072d)" -ForegroundColor White
+Write-Host "                                -> Document Intelligence Images -> Chat Completion (caption) -> Image Embeddings" -ForegroundColor White
 Write-Host ""
-Write-Host "Foundry patterns used:" -ForegroundColor Cyan
-Write-Host "  - AIServicesByIdentity: keyless skillset billing via system MI" -ForegroundColor White
-Write-Host "  - authIdentity: null on all skills/vectorizer (no API keys)" -ForegroundColor White
-Write-Host "  - ResourceId connection string (MI-based blob access)" -ForegroundColor White
-Write-Host "  - Index Projections with skipIndexingParentDocuments" -ForegroundColor White
+Write-Host "Operational notes:" -ForegroundColor Cyan
+Write-Host "  - If you see 'truncated extracted text', it's a SKU extraction limit; consider S1+." -ForegroundColor White
+Write-Host "  - Ensure the search service identity has 'Cognitive Services OpenAI User' on your Azure OpenAI resource." -ForegroundColor White
+Write-Host "  - ChatCompletion skill is Preview; if you need GA, replace with ImageAnalysisSkill('description')." -ForegroundColor White
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Upload PDF files to the '$BlobContainer' container in storage account '$storageAccount'" -ForegroundColor White
-Write-Host "  2. Run the indexer:" -ForegroundColor White
+Write-Host "  2. Re-run the indexer:" -ForegroundColor White
 Write-Host "     az rest --method POST --url '${searchEndpoint}indexers/pdf-indexer/run?api-version=$apiVersion' --resource https://search.azure.com/" -ForegroundColor Gray
 Write-Host "  3. Monitor indexer status:" -ForegroundColor White
 Write-Host "     az rest --method GET --url '${searchEndpoint}indexers/pdf-indexer/status?api-version=$apiVersion' --resource https://search.azure.com/" -ForegroundColor Gray

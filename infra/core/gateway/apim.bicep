@@ -297,5 +297,5 @@ output name string = apim.name
 output gatewayUrl string = apim.properties.gatewayUrl
 output portalUrl string = apim.properties.portalUrl ?? ''
 output mcpApiUrl string = '${apim.properties.gatewayUrl}/mcp'
-#disable-next-line outputs-should-not-contain-secrets
-output subscriptionPrimaryKey string = mcpSubscription.listSecrets().primaryKey
+// Subscription key is NOT output here (security best practice — avoid secrets in ARM outputs).
+// Retrieve at runtime: az rest --method POST --url '<apim-id>/subscriptions/mcp-subscription/listSecrets?api-version=2023-05-01-preview' --resource https://management.azure.com/

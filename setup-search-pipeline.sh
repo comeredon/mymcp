@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # setup-search-pipeline.sh
-# Deploys the Azure AI Search integrated vectorization pipeline (data source, index, skillset, indexer)
+# Deploys the Azure AI Search pipeline (data source, index, skillset, indexer)
 # using Foundry-aligned patterns: keyless billing (AIServicesByIdentity), managed identity auth,
-# Document Layout skill, ChatCompletion (GenAI Prompt) skill, and Azure OpenAI Embedding skill.
-#
-# Can be called standalone or from deploy.sh with deployment outputs passed as environment variables.
+# Document Layout (Document Intelligence) skill, ChatCompletion (GenAI Prompt) skill (Preview),
+# and Azure OpenAI Embedding skill.
 #
 # Usage:
 #   Standalone (reads from Bicep deployment):
@@ -14,12 +13,19 @@
 #     SEARCH_ENDPOINT=... STORAGE_ACCOUNT_ID=... AZURE_OPENAI_ENDPOINT=... \
 #       AI_FOUNDRY_SERVICES_SUBDOMAIN_URL=... bash setup-search-pipeline.sh
 #
-# API version: 2024-11-01-Preview (required for Document Layout skill, ChatCompletion skill,
-# and AIServicesByIdentity keyless skillset billing).
+# API version (Preview is required for token-based TextSplit + ChatCompletion skill):
+#   2024-11-01-Preview
+#   - TextSplit token-based chunking and updated params  ➜ docs: 2024-09-01-preview and later
+#   - ChatCompletionSkill (GenAI Prompt)               ➜ public preview
+#
+# References:
+# - Text Split skill (token-based, ordinals): https://learn.microsoft.com/azure/search/cognitive-search-skill-textsplit
+# - Chat Completion skill (Preview):          https://docs.azure.cn/en-us/search/cognitive-search-skill-genai-prompt
+# - Embedding skill + 8k token input:         https://learn.microsoft.com/azure/search/cognitive-search-skill-azure-openai-embedding
 
 set -euo pipefail
 
-API_VERSION="2025-11-01-Preview"
+API_VERSION="2025-05-01-Preview"
 INDEX_NAME="${INDEX_NAME:-pdf-index}"
 BLOB_CONTAINER="${BLOB_CONTAINER:-pdfs}"
 IMAGE_CONTAINER="${IMAGE_CONTAINER:-pdf-images}"
@@ -170,7 +176,7 @@ index_body=$(cat <<EOF
 {
   "name": "${INDEX_NAME}",
   "fields": [
-    { "name": "content_id",       "type": "Edm.String", "key": true,  "analyzer": "keyword" },
+    { "name": "content_id",       "type": "Edm.String", "key": true,  "filterable": true, "analyzer": "keyword" },
     { "name": "text_document_id", "type": "Edm.String", "filterable": true, "retrievable": true },
     { "name": "image_document_id","type": "Edm.String", "filterable": true, "retrievable": true },
     { "name": "document_title",   "type": "Edm.String", "searchable": true, "retrievable": true },
@@ -230,7 +236,7 @@ EOF
 )
 
 if call_search_api PUT "/indexes/${INDEX_NAME}" "$index_body"; then
-    echo "  ✅ Index created (3072-d HNSW, OpenAI vectorizer with keyless auth)"
+    echo "  ✅ Index created (3072-d HNSW; embeddings provided by skillset)"
 else
     echo "  ⚠️  Index creation failed"
 fi
@@ -242,7 +248,7 @@ echo "Step 3/5: Creating skillset (pdf-skillset)..."
 skillset_body=$(cat <<EOF
 {
   "name": "pdf-skillset",
-  "description": "Foundry-aligned pipeline: Document Layout for text/image extraction, GPT-4o for image verbalization, text-embedding-3-large for vector embeddings. Uses AIServicesByIdentity for keyless billing.",
+  "description": "Document Layout + token-based chunking + embeddings + image captions (chat completion). Keyless billing via AIServicesByIdentity.",
   "cognitiveServices": {
     "@odata.type": "#Microsoft.Azure.Search.AIServicesByIdentity",
     "description": "Keyless billing via search service system-assigned managed identity (preview)",
@@ -266,6 +272,7 @@ skillset_body=$(cat <<EOF
     {
       "@odata.type": "#Microsoft.Skills.Util.DocumentIntelligenceLayoutSkill",
       "name": "doc-layout-skill",
+      "description": "Uses Document Intelligence layout model for structure-aware chunking AND image extraction with location metadata (page, bounding polygon). To use indexer image extraction instead (simpler/cheaper), remove 'images' from extractionOptions and add imageAction: generateNormalizedImages to the indexer.",
       "context": "/document",
       "outputFormat": "text",
       "extractionOptions": ["images", "locationMetadata"],
@@ -276,10 +283,36 @@ skillset_body=$(cat <<EOF
       ]
     },
     {
+      "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+      "name": "text-split-skill",
+      "context": "/document/text_sections/*",
+      "textSplitMode": "pages",
+      "maximumPageLength": 512,
+      "pageOverlapLength": 64,
+      "unit": "azureOpenAITokens",
+      "inputs": [{ "name": "text", "source": "/document/text_sections/*/content" }],
+      "outputs": [
+        { "name": "textItems", "targetName": "chunks" },
+        { "name": "ordinalPositions", "targetName": "chunk_ordinals" }
+      ]
+    },
+    {
+      "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+      "name": "text-embedding-skill",
+      "context": "/document/text_sections/*/chunks/*",
+      "resourceUri": "${AZURE_OPENAI_ENDPOINT}",
+      "deploymentId": "embeddings",
+      "modelName": "text-embedding-3-large",
+      "dimensions": 3072,
+      "authIdentity": null,
+      "inputs":  [{ "name": "text", "source": "/document/text_sections/*/chunks/*" }],
+      "outputs": [{ "name": "embedding", "targetName": "content_embedding" }]
+    },
+    {
       "@odata.type": "#Microsoft.Skills.Custom.ChatCompletionSkill",
       "name": "image-verbalization-skill",
       "context": "/document/normalized_images/*",
-      "uri": "${AZURE_OPENAI_ENDPOINT}/openai/deployments/chat/chat/completions",
+      "uri": "${AZURE_OPENAI_ENDPOINT%/}/openai/deployments/chat/chat/completions?api-version=2024-10-21",
       "authIdentity": null,
       "inputs": [
         { "name": "image",         "source": "/document/normalized_images/*/data" },
@@ -288,22 +321,10 @@ skillset_body=$(cat <<EOF
         { "name": "userMessage",   "source": "='Describe the content of this image.'" }
       ],
       "outputs": [
-        { "name": "response", "targetName": "verbalized_text" }
+        { "name": "response", "targetName": "verbalized_image" }
       ],
       "responseFormat": { "type": "text" },
-      "commonModelParameters": { "temperature": 0.3, "maxTokens": 1024 }
-    },
-    {
-      "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
-      "name": "text-embedding-skill",
-      "context": "/document/text_sections/*",
-      "resourceUri": "${AZURE_OPENAI_ENDPOINT}",
-      "deploymentId": "embeddings",
-      "modelName": "text-embedding-3-large",
-      "dimensions": 3072,
-      "authIdentity": null,
-      "inputs":  [{ "name": "text", "source": "/document/text_sections/*/content" }],
-      "outputs": [{ "name": "embedding", "targetName": "content_embedding" }]
+      "commonModelParameters": { "temperature": 0, "maxTokens": 1024 }
     },
     {
       "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
@@ -311,10 +332,10 @@ skillset_body=$(cat <<EOF
       "context": "/document/normalized_images/*",
       "resourceUri": "${AZURE_OPENAI_ENDPOINT}",
       "deploymentId": "embeddings",
-      "modelName": "text-embedding-3-large",
+      "modelName": "text-embedding-3-large", 
       "dimensions": 3072,
       "authIdentity": null,
-      "inputs":  [{ "name": "text", "source": "/document/normalized_images/*/verbalized_text" }],
+      "inputs":  [{ "name": "text", "source": "/document/normalized_images/*/verbalized_image" }],
       "outputs": [{ "name": "embedding", "targetName": "content_embedding" }]
     }
   ],
@@ -323,41 +344,23 @@ skillset_body=$(cat <<EOF
       {
         "targetIndexName": "${INDEX_NAME}",
         "parentKeyFieldName": "text_document_id",
-        "sourceContext": "/document/text_sections/*",
+        "sourceContext": "/document/text_sections/*/chunks/*",
         "mappings": [
-          { "name": "content_text",      "source": "/document/text_sections/*/content" },
-          { "name": "content_embedding", "source": "/document/text_sections/*/content_embedding" },
+          { "name": "content_text",      "source": "/document/text_sections/*/chunks/*" },
+          { "name": "content_embedding", "source": "/document/text_sections/*/chunks/*/content_embedding" },
           { "name": "content_path",      "source": "/document/metadata_storage_path" },
-          { "name": "document_title",    "source": "/document/metadata_storage_name" },
-          {
-            "name": "location_metadata",
-            "source": null,
-            "sourceContext": "/document/text_sections/*",
-            "inputs": [
-              { "name": "page_number",       "source": "/document/text_sections/*/pageNumber" },
-              { "name": "bounding_polygons", "source": "/document/text_sections/*/boundingPolygons" }
-            ]
-          }
+          { "name": "document_title",    "source": "/document/metadata_storage_name" }
         ]
       },
       {
         "targetIndexName": "${INDEX_NAME}",
-        "parentKeyFieldName": "image_document_id",
+        "parentKeyFieldName": "image_document_id", 
         "sourceContext": "/document/normalized_images/*",
         "mappings": [
-          { "name": "content_text",      "source": "/document/normalized_images/*/verbalized_text" },
+          { "name": "content_text",      "source": "/document/normalized_images/*/verbalized_image" },
           { "name": "content_embedding", "source": "/document/normalized_images/*/content_embedding" },
-          { "name": "content_path",      "source": "/document/normalized_images/*/storagePath" },
-          { "name": "document_title",    "source": "/document/metadata_storage_name" },
-          {
-            "name": "location_metadata",
-            "source": null,
-            "sourceContext": "/document/normalized_images/*",
-            "inputs": [
-              { "name": "page_number",       "source": "/document/normalized_images/*/pageNumber" },
-              { "name": "bounding_polygons", "source": "/document/normalized_images/*/boundingPolygons" }
-            ]
-          }
+          { "name": "content_path",      "source": "/document/metadata_storage_path" },
+          { "name": "document_title",    "source": "/document/metadata_storage_name" }
         ]
       }
     ],
@@ -370,7 +373,7 @@ EOF
 )
 
 if call_search_api PUT "/skillsets/pdf-skillset" "$skillset_body"; then
-    echo "  ✅ Skillset created (AIServicesByIdentity, Document Layout + ChatCompletion + Embedding)"
+    echo "  ✅ Skillset created (AIServicesByIdentity, Layout + TextSplit + Embeddings + ChatCompletion)"
 else
     echo "  ⚠️  Skillset creation failed"
 fi
@@ -379,6 +382,11 @@ fi
 
 echo "Step 4/5: Creating indexer (pdf-indexer)..."
 
+# NOTE: Images are extracted by Document Intelligence (extractionOptions: ["images"]),
+# which provides location metadata (page, bounding polygon) for each image.
+# To switch back to simpler/cheaper indexer-based extraction, add
+#   "imageAction": "generateNormalizedImages"
+# to the indexer configuration below, and remove "images" from the DI skill's extractionOptions.
 indexer_body=$(cat <<EOF
 {
   "name": "pdf-indexer",
@@ -390,13 +398,12 @@ indexer_body=$(cat <<EOF
     "batchSize": 1,
     "configuration": {
       "dataToExtract": "contentAndMetadata",
-      "imageAction": "generateNormalizedImages",
       "allowSkillsetToReadFileData": true
     }
   },
   "fieldMappings": [
-    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "content_id" },
-    { "sourceFieldName": "metadata_storage_name", "targetFieldName": "document_title" }
+    { "sourceFieldName": "metadata_storage_name", "targetFieldName": "document_title" },
+    { "sourceFieldName": "metadata_storage_path", "targetFieldName": "content_path" }
   ],
   "outputFieldMappings": []
 }
@@ -424,16 +431,18 @@ fi
 echo ""
 echo "✅ Search pipeline deployed successfully!"
 echo ""
-echo "Pipeline architecture:"
-echo "  Blob Storage (${BLOB_CONTAINER}) → Document Layout Skill → Text Sections"
-echo "                                   → Image Extraction → GPT-4o Verbalization"
-echo "                                   → text-embedding-3-large (3072d) → Index"
+echo "Pipeline:"
+echo "  Blob Storage (${BLOB_CONTAINER}) → Document Layout → TextSplit (512 tokens) → Embeddings (3072d)"
+echo "                                   → Normalized Images → Chat Completion (caption) → (optional) image embeddings"
 echo ""
-echo "Foundry patterns:"
-echo "  • AIServicesByIdentity: keyless skillset billing via system MI"
-echo "  • authIdentity: null on all skills/vectorizer (no API keys)"
-echo "  • ResourceId connection string (MI-based blob access)"
-echo "  • Index Projections with skipIndexingParentDocuments"
+echo "Operational notes:"
+echo "  • If you see 'truncated extracted text', it's a SKU extraction limit; consider S1+. (Chunking helps model limits, not extraction caps.)"
+echo "  • Ensure the search service identity has 'Cognitive Services OpenAI User' on your Azure OpenAI resource."
+echo "  • ChatCompletion skill is Preview; if you need GA, replace with ImageAnalysisSkill('description')."
+echo ""
+echo "Token chunking keeps each embedding input safely under model limits (8k tokens), avoiding rejected/trimmed requests at the embedding stage."
+echo "Removing the index vectorizer avoids double‑vectorization and potential inconsistency; you're now only using AzureOpenAIEmbeddingSkill during indexing."
+echo "Truncation before the skillset is a service limit—upgrade the SKU to raise extraction caps; chunking only prevents model‑side truncation."
 echo ""
 echo "Next steps:"
 echo "  1. Upload PDFs:  az storage blob upload-batch -d ${BLOB_CONTAINER} -s <folder> --account-name ${STORAGE_ACCOUNT_NAME:-<storage>} --auth-mode login"

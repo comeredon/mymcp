@@ -121,6 +121,7 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
       const doc = r.document as SearchDocument;
       items.push({
         id: doc.content_id,
+        documentId: doc.text_document_id ?? null,
         title: doc.document_title ?? doc.content_id,
         text: doc.content_text ?? "",
         type: doc.image_document_id ? "image" : "text",
@@ -137,7 +138,7 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
   }
 });
 
-// Fetch endpoint - return full text (or aggregate chunks) by doc id
+// Fetch endpoint - return full text (or aggregate chunks) by document title or text_document_id
 app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) => {
   try {
     const { id, pages }: { id: string; pages?: number[] } = req.body;
@@ -151,16 +152,21 @@ app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) =
       return res.status(400).json({ error: 'Invalid document ID format' });
     }
 
-    // Fetch all text chunks for the document by text_document_id
-    const filter = `text_document_id eq '${id}'`;
-    const results = await searchClient.search("*", {
-      filter,
-      top: 500
-    });
-
-    const chunks: SearchDocument[] = [];
-    for await (const r of results.results) {
-      chunks.push(r.document as SearchDocument);
+    // Try fetching by text_document_id first, then fall back to document_title
+    let chunks: SearchDocument[] = [];
+    for (const filterExpr of [
+      `text_document_id eq '${id}'`,
+      `document_title eq '${id}'`
+    ]) {
+      const results = await searchClient.search("*", {
+        filter: filterExpr,
+        top: 500,
+        select: ["content_id", "text_document_id", "document_title", "content_text", "location_metadata"]
+      });
+      for await (const r of results.results) {
+        chunks.push(r.document as SearchDocument);
+      }
+      if (chunks.length > 0) break;
     }
 
     let text = chunks
@@ -252,13 +258,13 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             },
             {
               name: "fetch",
-              description: "Retrieve full document content or specific pages",
+              description: "Retrieve full document content or specific pages by document title (e.g. 'mg.pdf') or documentId from search results",
               inputSchema: {
                 type: "object",
                 properties: {
                   id: {
                     type: "string",
-                    description: "The document ID to fetch"
+                    description: "The document title (e.g. 'mg.pdf') or documentId returned by the search tool"
                   },
                   pages: {
                     type: "array",
@@ -324,6 +330,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             const doc = r.document as SearchDocument;
             searchItems.push({
               id: doc.content_id,
+              documentId: doc.text_document_id ?? null,
               title: doc.document_title ?? doc.content_id,
               text: doc.content_text ?? "",
               type: doc.image_document_id ? "image" : "text",
@@ -375,15 +382,21 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             });
           }
 
-          const filter = `text_document_id eq '${docId}'`;
-          const fetchResults = await searchClient.search("*", {
-            filter,
-            top: 500
-          });
-
+          // Try fetching by text_document_id first, then fall back to document_title
           const fetchChunks: SearchDocument[] = [];
-          for await (const r of fetchResults.results) {
-            fetchChunks.push(r.document as SearchDocument);
+          for (const filterExpr of [
+            `text_document_id eq '${docId}'`,
+            `document_title eq '${docId}'`
+          ]) {
+            const fetchResults = await searchClient.search("*", {
+              filter: filterExpr,
+              top: 500,
+              select: ["content_id", "text_document_id", "document_title", "content_text", "location_metadata"]
+            });
+            for await (const r of fetchResults.results) {
+              fetchChunks.push(r.document as SearchDocument);
+            }
+            if (fetchChunks.length > 0) break;
           }
 
           let text = fetchChunks

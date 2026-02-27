@@ -12,9 +12,9 @@ param location string = 'swedencentral'
 @description('Name of the search index containing your PDF documents')
 param searchIndexName string = 'pdf-index'
 
-@description('Azure AI Search SKU')
+@description('Azure AI Search SKU - use standard (S1) or higher to avoid text extraction truncation (basic limits to 64KB per document)')
 @allowed(['free', 'basic', 'standard', 'standard2', 'standard3', 'storage_optimized_l1', 'storage_optimized_l2'])
-param searchServiceSku string = 'basic'
+param searchServiceSku string = 'standard'
 
 @description('Custom API key for the MCP server (optional - will generate if not provided)')
 @secure()
@@ -558,13 +558,11 @@ output AZURE_OPENAI_CHAT_DEPLOYMENT string = 'chat'
 output APIM_NAME string = deployApim ? apim!.outputs.name : ''
 output APIM_GATEWAY_URL string = deployApim ? apim!.outputs.gatewayUrl : ''
 output APIM_MCP_API_URL string = deployApim ? apim!.outputs.mcpApiUrl : ''
-#disable-next-line outputs-should-not-contain-secrets
-output APIM_SUBSCRIPTION_KEY string = deployApim ? apim!.outputs.subscriptionPrimaryKey : ''
+// APIM subscription key is NOT output here (security best practice — retrieve at runtime via az rest)
 
 output CONTAINER_APP_NAME string = mcpServer.outputs.name
 output MCP_SERVER_INTERNAL_URI string = mcpServer.outputs.uri
-#disable-next-line outputs-should-not-contain-secrets
-output MCP_SERVER_API_KEY string = generatedApiKey
+// MCP server API key is NOT output here (security best practice — retrieve at runtime via az containerapp secret show)
 output MCP_PUBLIC_ENDPOINT string = deployApim ? '${apim!.outputs.mcpApiUrl}/api/tools' : mcpServer.outputs.uri
 
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name  

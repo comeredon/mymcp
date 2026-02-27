@@ -125,12 +125,31 @@ $openAiName = $outputs.AZURE_OPENAI_NAME.value
 $openAiEndpoint = $outputs.AZURE_OPENAI_ENDPOINT.value
 $mcpServerInternalUri = $outputs.MCP_SERVER_INTERNAL_URI.value
 $mcpPublicEndpoint = $outputs.MCP_PUBLIC_ENDPOINT.value
-$generatedApiKey = $outputs.MCP_SERVER_API_KEY.value
 $managedIdentityName = $outputs.MANAGED_IDENTITY_NAME.value
 $managedIdentityId = $outputs.MANAGED_IDENTITY_ID.value
 $containerAppName = $outputs.CONTAINER_APP_NAME.value
 $apimGatewayUrl = if ($outputs.APIM_GATEWAY_URL) { $outputs.APIM_GATEWAY_URL.value } else { "" }
 $apimName = if ($outputs.APIM_NAME) { $outputs.APIM_NAME.value } else { "" }
+
+# Retrieve secrets at runtime (not from deployment outputs — security best practice)
+$generatedApiKey = az containerapp secret show `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --secret-name server-api-key `
+    --query value -o tsv 2>$null
+if (-not $generatedApiKey) { $generatedApiKey = '' }
+
+$apimSubscriptionKey = ''
+if ($apimName) {
+    $apimId = az apim show --name $apimName --resource-group $ResourceGroupName --query id -o tsv 2>$null
+    if ($apimId) {
+        $apimSubscriptionKey = az rest --method POST `
+            --url "$apimId/subscriptions/mcp-subscription/listSecrets?api-version=2023-05-01-preview" `
+            --resource https://management.azure.com/ `
+            --query primaryKey -o tsv 2>$null
+        if (-not $apimSubscriptionKey) { $apimSubscriptionKey = '' }
+    }
+}
 
 # Build and push container image
 Write-Host "`nBuilding Docker image..." -ForegroundColor Yellow

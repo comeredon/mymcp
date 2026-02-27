@@ -160,13 +160,29 @@ openai_name=$(echo "$outputs" | jq -r '.AZURE_OPENAI_NAME.value')
 openai_endpoint=$(echo "$outputs" | jq -r '.AZURE_OPENAI_ENDPOINT.value')
 mcp_server_internal_uri=$(echo "$outputs" | jq -r '.MCP_SERVER_INTERNAL_URI.value')
 mcp_public_endpoint=$(echo "$outputs" | jq -r '.MCP_PUBLIC_ENDPOINT.value')
-generated_api_key=$(echo "$outputs" | jq -r '.MCP_SERVER_API_KEY.value')
 managed_identity_name=$(echo "$outputs" | jq -r '.MANAGED_IDENTITY_NAME.value')
 managed_identity_id=$(echo "$outputs" | jq -r '.MANAGED_IDENTITY_ID.value')
 container_app_name=$(echo "$outputs" | jq -r '.CONTAINER_APP_NAME.value')
 apim_gateway_url=$(echo "$outputs" | jq -r '.APIM_GATEWAY_URL.value // empty')
 apim_name=$(echo "$outputs" | jq -r '.APIM_NAME.value // empty')
-apim_subscription_key=$(echo "$outputs" | jq -r '.APIM_SUBSCRIPTION_KEY.value // empty')
+
+# Retrieve secrets at runtime (not from deployment outputs — security best practice)
+generated_api_key=$(az containerapp secret show \
+    --name "$container_app_name" \
+    --resource-group "$RESOURCE_GROUP_NAME" \
+    --secret-name server-api-key \
+    --query value -o tsv 2>/dev/null || echo '')
+
+apim_subscription_key=''
+if [[ -n "$apim_name" ]]; then
+    apim_id=$(az apim show --name "$apim_name" --resource-group "$RESOURCE_GROUP_NAME" --query id -o tsv 2>/dev/null)
+    if [[ -n "$apim_id" ]]; then
+        apim_subscription_key=$(az rest --method POST \
+            --url "${apim_id}/subscriptions/mcp-subscription/listSecrets?api-version=2023-05-01-preview" \
+            --resource https://management.azure.com/ \
+            --query primaryKey -o tsv 2>/dev/null || echo '')
+    fi
+fi
 storage_account_id=$(echo "$outputs" | jq -r '.STORAGE_ACCOUNT_ID.value')
 ai_foundry_url=$(echo "$outputs" | jq -r '.AI_FOUNDRY_SERVICES_SUBDOMAIN_URL.value')
 search_index_name=$(echo "$outputs" | jq -r '.SEARCH_INDEX_NAME.value')
