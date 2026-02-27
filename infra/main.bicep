@@ -398,6 +398,11 @@ module mcpServer 'core/host/container-app.bicep' = {
         secretRef: 'server-api-key'
       }
       {
+        name: 'ALLOWED_ORIGINS'
+        // Allow requests originating from APIM (for any browser clients proxied through APIM)
+        value: deployApim ? 'https://${abbrs.apiManagementService}${resourceToken}.azure-api.net' : ''
+      }
+      {
         name: 'PORT'
         value: '8080'
       }
@@ -571,3 +576,4 @@ output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
 output MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
 output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
 output AI_FOUNDRY_SERVICES_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
+output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

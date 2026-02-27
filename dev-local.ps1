@@ -32,7 +32,14 @@ function Load-EnvFile {
             }
             
             [Environment]::SetEnvironmentVariable($key, $value, "Process")
-            Write-Host "  $key = $value" -ForegroundColor Cyan
+            # Mask sensitive values to avoid leaking secrets in console output
+            $sensitiveKeys = @('KEY', 'SECRET', 'PASSWORD', 'TOKEN', 'CONNECTION_STRING')
+            $isSensitive = $sensitiveKeys | Where-Object { $key -like "*$_*" }
+            if ($isSensitive) {
+                Write-Host "  $key = ********" -ForegroundColor Cyan
+            } else {
+                Write-Host "  $key = $value" -ForegroundColor Cyan
+            }
         }
     }
 }

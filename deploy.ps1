@@ -284,5 +284,5 @@ Write-Host ""
 Write-Host "4. Configure your MCP client (GitHub Copilot):" -ForegroundColor White
 Write-Host "   Update mcp.json with:" -ForegroundColor White
 Write-Host "   URL: $mcpServerUri/api/tools" -ForegroundColor Gray
-Write-Host "   API Key: $generatedApiKey" -ForegroundColor Gray
+Write-Host "   API Key: ********(hidden - retrieve via 'az containerapp secret show')" -ForegroundColor Gray
 Write-Host ""
