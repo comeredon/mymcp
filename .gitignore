@@ -39,9 +39,6 @@ yarn-error.log*
 # Azure
 .azure/*
 !.azure/.env.template
-!.azure/mcp/
-.azure/mcp/*
-!.azure/mcp/.env
 *.azd.env
 
 
