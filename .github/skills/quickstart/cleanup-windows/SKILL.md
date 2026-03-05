@@ -44,7 +44,7 @@ if ($searchService) {
     $token = az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv
     $headers = @{ "Authorization" = "Bearer $token" }
     $base = "https://$searchService.search.windows.net"
-    $api = "api-version=2025-05-01-Preview"
+    $api = "api-version=2025-11-01-Preview"
 
     # Delete in order: indexer → skillset → index → datasource
     foreach ($component in @("indexers/pdf-indexer", "skillsets/pdf-skillset", "indexes/pdf-index", "datasources/pdf-datasource")) {
@@ -73,7 +73,7 @@ az group wait --name $ResourceGroupName --deleted --timeout 600 2>$null
 Start-Sleep -Seconds 10
 ```
 
-## Step 5: Purge Soft-Deleted Cognitive Services (Azure OpenAI)
+## Step 5: Purge Soft-Deleted Cognitive Services (Azure AI Foundry)
 
 ```powershell
 Write-Host "Checking for soft-deleted Cognitive Services..."
@@ -201,7 +201,7 @@ az storage account list --include-deleted --query "[?deletedTime != null]" -o ta
 | Parameter | Description |
 |-----------|-------------|
 | `-ResourceGroupName` | Resource group to delete (default: `mcp-server-rg`) |
-| `-PurgeCognitive` | Purge soft-deleted Azure OpenAI |
+| `-PurgeCognitive` | Purge soft-deleted Azure AI Foundry |
 | `-PurgeApim` | Purge soft-deleted API Management |
 | `-PurgeKeyvault` | Purge soft-deleted Key Vaults |
 | `-PurgeStorage` | Purge soft-deleted Storage Accounts |

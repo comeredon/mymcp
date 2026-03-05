@@ -19,30 +19,29 @@
 - [ ] Enable **private endpoint** for **Azure AI Search**
   - Create private DNS zone `privatelink.search.windows.net`
   - Disable public network access on the search service
-- [ ] Enable **private endpoint** for **Azure OpenAI** (Cognitive Services)
-  - Create private DNS zone `privatelink.openai.azure.com`
-  - Disable public network access on the cognitive services account
+- [ ] Enable **private endpoint** for **Azure AI Foundry** (Cognitive Services)
+  - Create private DNS zone `privatelink.cognitiveservices.azure.com`
+  - Disable public network access on the AI Foundry account
 - [ ] Update the **VNet** and **subnet** configuration in `infra/core/network/vnet.bicep` to accommodate private endpoint subnets
 - [ ] Ensure the **Container App** can reach all services through the VNet (VNet integration)
 - [ ] Update **APIM** networking if needed (internal VNet mode or private endpoint)
 
-## 3. Migrate from Azure OpenAI to AI Foundry
+## 3. ~~Migrate from Azure OpenAI to AI Foundry~~ ✅ DONE
 
-- [ ] Evaluate **Azure AI Foundry** (formerly Azure AI Studio) as a replacement for the standalone Azure OpenAI resource
-  - Assess model availability (embedding model `text-embedding-3-large` and any future chat/completion models)
-  - Compare pricing, quota management, and regional availability
-- [ ] Create an **AI Foundry hub and project** to host the models
-- [ ] Migrate the embedding model deployment from Azure OpenAI to AI Foundry
-- [ ] Update the search pipeline (`setup-search-pipeline.sh`) to point the vectorizer at the AI Foundry endpoint
-- [ ] Update Bicep templates (`infra/core/ai/cognitiveservices.bicep`, `infra/main.bicep`) to provision AI Foundry resources instead of standalone Azure OpenAI
+- [x] ~~Evaluate **Azure AI Foundry** as a replacement for the standalone Azure OpenAI resource~~ → Consolidated into single `AIServices` resource
+- [x] ~~Create an AI Foundry hub and project to host the models~~ → Using `kind: 'AIServices'` with model deployments
+- [x] ~~Migrate the embedding model deployment from Azure OpenAI to AI Foundry~~ → Deployments (embeddings, chat) now on AI Foundry resource
+- [x] ~~Update the search pipeline to point the vectorizer at the AI Foundry endpoint~~ → `setup-search-pipeline.sh` updated
+- [x] ~~Update Bicep templates to provision AI Foundry resources instead of standalone Azure OpenAI~~ → `main.bicep` consolidated
 - [ ] Validate that indexing and search still work end-to-end after migration
 
-## 4. Evaluate Azure AI Content Understanding
+## 4. ~~Evaluate Azure AI Content Understanding~~ ✅ DONE
 
-- [ ] Investigate whether **Azure AI Content Understanding** (preview) is a better fit than the current Document Intelligence + AI Search indexer pipeline
+- [x] ~~Investigate whether **Azure AI Content Understanding** (preview) is a better fit than the current Document Intelligence + AI Search indexer pipeline~~ → Yes, adopted as replacement
   - Content Understanding provides a unified approach to extract text, layout, tables, figures, and semantic structure from documents
-  - Compare extraction quality (sections, chapters, tables, figures) vs. current DI + custom skillset approach
-  - Evaluate whether it simplifies the pipeline (fewer moving parts: no custom skillset, no separate vectorizer configuration)
-  - Check regional availability and preview limitations
-- [ ] If beneficial, prototype a Content Understanding–based pipeline and compare results with the current setup
-- [ ] Document findings and recommendation
+  - Built-in chunking via `chunkingProperties` eliminates the separate `TextSplitSkill`
+  - Markdown output for tables/figures, cross-page table support, chunks spanning page boundaries
+  - More cost effective than Document Intelligence Layout skill
+- [x] ~~Prototype a Content Understanding–based pipeline and compare results~~ → Implemented in `setup-search-pipeline.sh/.ps1/.http`
+- [x] ~~Document findings and recommendation~~ → `ContentUnderstandingSkill` replaces `DocumentIntelligenceLayoutSkill` + `SplitSkill`
+- [ ] Validate end-to-end indexing and search after migration to Content Understanding

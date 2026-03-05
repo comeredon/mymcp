@@ -23,9 +23,9 @@ Use this checklist to ensure your deployment is complete and properly configured
 - [ ] Azure AI Search service deployed
 - [ ] Storage Account created
 - [ ] Blob containers (`pdfs`, `documents`) created
-- [ ] Azure OpenAI account deployed
-- [ ] OpenAI embeddings deployment created
-- [ ] OpenAI chat deployment created
+- [ ] Azure AI Foundry account deployed
+- [ ] AI Foundry embeddings deployment created
+- [ ] AI Foundry chat deployment created
 
 ### Optional Components
 - [ ] API Management deployed (default: enabled)
@@ -58,10 +58,10 @@ Use this checklist to ensure your deployment is complete and properly configured
 - [ ] `STORAGE_CONNECTION_STRING` configured (as secret)
 - [ ] `AZURE_STORAGE_ACCOUNT_NAME` configured
 - [ ] `AZURE_STORAGE_CONTAINER_NAME` configured
-- [ ] `AZURE_OPENAI_ENDPOINT` configured (as secret)
-- [ ] `AZURE_OPENAI_KEY` configured (as secret)
-- [ ] `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` configured
-- [ ] `AZURE_OPENAI_CHAT_DEPLOYMENT` configured
+- [ ] `AI_FOUNDRY_ENDPOINT` configured (as secret)
+- [ ] `AI_FOUNDRY_KEY` configured (as secret)
+- [ ] `AI_FOUNDRY_EMBEDDING_DEPLOYMENT` configured
+- [ ] `AI_FOUNDRY_CHAT_DEPLOYMENT` configured
 - [ ] `SERVER_API_KEY` configured (as secret)
 - [ ] `PORT` configured
 
@@ -187,8 +187,8 @@ az storage blob list --account-name <storage-name> --container-name pdfs
 # Test search service
 az search service show --name <search-name> --resource-group <rg-name>
 
-# Test OpenAI deployment
-az cognitiveservices account deployment list --name <openai-name> --resource-group <rg-name>
+# Test AI Foundry deployment
+az cognitiveservices account deployment list --name <ai-foundry-name> --resource-group <rg-name>
 ```
 
 ## 📊 Success Criteria

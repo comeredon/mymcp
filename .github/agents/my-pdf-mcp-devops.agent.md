@@ -1,7 +1,7 @@
 ---
 name: PdfMcpDevOpsAgent
 description: DevOps Agent for the MCP Azure PDF Server — deployment, cleanup, Docker, search pipeline, and infrastructure management
-model: Claude Opus 4.6 (fast mode) (Preview) (copilot)
+model: Claude Sonnet 4.6 (copilot)
 
 ---
 
@@ -47,7 +47,7 @@ Load skills from `.github/skills/` as needed:
 - **Registry**: Azure Container Registry (ACR) with managed identity pull
 - **Hosting**: Azure Container Apps (internal ingress) behind APIM gateway
 - **Search**: Azure AI Search with Document Intelligence skillset
-- **AI**: Azure OpenAI (text-embedding-3-large, gpt-4o)
+- **AI**: Azure AI Foundry (text-embedding-3-large, gpt-4o)
 - **Storage**: Azure Blob Storage (pdfs container)
 - **Gateway**: Azure API Management (Consumption tier)
 - **Networking**: Optional VNet with private endpoints
@@ -62,7 +62,7 @@ External Clients (Copilot, etc.)
          ↓
   [Container App] ← Internal only (x-api-key injected by APIM policy)
          ↓
-  [Azure Services] ← AI Search, Storage, OpenAI (Managed Identity / RBAC)
+  [Azure Services] ← AI Search, Storage, AI Foundry (Managed Identity / RBAC)
 ```
 
 ## Key Files
@@ -125,7 +125,7 @@ docker login <acr-name>.azurecr.io -u 00000000-0000-0000-0000-000000000000 --pas
 - Always run as non-root user in containers
 - Always validate deployment after updates (`validate-deployment.sh`)
 - Always compile TypeScript before building Docker image (`npm run build` or `npx tsc --noEmit`)
-- Soft-deleted resources (OpenAI, APIM, Key Vault, Storage) block redeployment — use `--purge-all` on cleanup
+- Soft-deleted resources (AI Foundry, APIM, Key Vault, Storage) block redeployment — use `--purge-all` on cleanup
 - Container App uses a placeholder image on first Bicep deploy — update to real ACR image after push
 - Search index uses RBAC-only auth (`disableLocalAuth: true`) — API keys will not work
 - The search pipeline must be deployed separately after infrastructure (`setup-search-pipeline.sh`)

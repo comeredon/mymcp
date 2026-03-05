@@ -36,7 +36,7 @@ $requiredResources = @{
     "Microsoft.App/containerApps" = "Container App"
     "Microsoft.Search/searchServices" = "AI Search Service"
     "Microsoft.Storage/storageAccounts" = "Storage Account"
-    "Microsoft.CognitiveServices/accounts" = "Azure OpenAI"
+    "Microsoft.CognitiveServices/accounts" = "Azure AI Foundry"
 }
 
 foreach ($type in $requiredResources.Keys) {
@@ -81,21 +81,21 @@ if ($storageAccount) {
     }
 }
 
-# Check Azure OpenAI deployments
-Write-Host "`nChecking Azure OpenAI deployments..." -ForegroundColor Yellow
+# Check Azure AI Foundry deployments
+Write-Host "`nChecking Azure AI Foundry deployments..." -ForegroundColor Yellow
 $openAI = $resources | Where-Object { $_.type -eq "Microsoft.CognitiveServices/accounts" }
 if ($openAI) {
     $deployments = az cognitiveservices account deployment list --name $openAI.name --resource-group $ResourceGroupName --query "[].name" -o json 2>$null | ConvertFrom-Json
     if ($deployments -contains "embeddings") {
         Write-Host "✅ 'embeddings' deployment exists" -ForegroundColor Green
     } else {
-        $warnings += "OpenAI 'embeddings' deployment not found"
+        $warnings += "AI Foundry 'embeddings' deployment not found"
         Write-Host "⚠️  'embeddings' deployment not found" -ForegroundColor Yellow
     }
     if ($deployments -contains "chat") {
         Write-Host "✅ 'chat' deployment exists" -ForegroundColor Green
     } else {
-        $warnings += "OpenAI 'chat' deployment not found"
+        $warnings += "AI Foundry 'chat' deployment not found"
         Write-Host "⚠️  'chat' deployment not found" -ForegroundColor Yellow
     }
 }

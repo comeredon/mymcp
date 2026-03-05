@@ -42,15 +42,15 @@ A production-ready, secure REST API server that provides semantic search and doc
 │              │                       │                                   │
 │              │ Managed Identity      │ Managed Identity                  │
 │              │                       │                                   │
-│  ┌───────────▼──────────┐   ┌───────▼──────────┐   ┌──────────────┐   │
-│  │  Azure AI Search     │   │  Storage Account │   │ Azure OpenAI │   │
-│  │  ┌────────────────┐  │   │  ┌────────────┐  │   │  ┌────────┐  │   │
-│  │  │ PDF Index      │  │   │  │ Blob:      │  │   │  │ GPT-4o │  │   │
-│  │  │ Semantic       │  │   │  │ Documents  │  │   │  │ Vision │  │   │
-│  │  │ • Embeddings   │  │   │  │ • pdfs     │  │   │  │ Embed  │  │   │
-│  │  │ • Semantic     │  │   │  │ • documents│  │   │  └────────┘  │   │
-│  │  │   Search       │  │   │  └────────────┘  │   │              │   │
-│  │  └────────────────┘  │   └──────────────────┘   └──────────────┘   │
+│  ┌───────────▼──────────┐   ┌───────▼──────────┐   ┌────────────────┐   │
+│  │  Azure AI Search     │   │  Storage Account │   │ AI Foundry     │   │
+│  │  ┌────────────────┐  │   │  ┌────────────┐  │   │  ┌────────┐   │   │
+│  │  │ PDF Index      │  │   │  │ Blob:      │  │   │  │ GPT-4o │   │   │
+│  │  │ Semantic       │  │   │  │ Documents  │  │   │  │ CU     │   │   │
+│  │  │ • Embeddings   │  │   │  │ • pdfs     │  │   │  │ Embed  │   │   │
+│  │  │ • Semantic     │  │   │  │ • documents│  │   │  └────────┘   │   │
+│  │  │   Search       │  │   │  └────────────┘  │   │               │   │
+│  │  └────────────────┘  │   └──────────────────┘   └────────────────┘   │
 │  └──────────────────────┘                                              │
 │                                                                         │
 │  ┌──────────────────────┐   ┌──────────────────────┐                  │
@@ -154,7 +154,7 @@ Custom agents are defined in `.github/agents/` as Markdown files with YAML front
 > Open GitHub Copilot Chat, type `@` and select the agent name (e.g. `@ProgramManager`), then describe your task.
 
 ```
-@ProgramManager Analyze the PL/I files and create translation documentation
+@ProgramManager Analyze the PL/I files in pli_src/ and create translation documentation
 @DeveloperAgent Implement the Java 21 translation from the translation/ specs
 @TesterAgent Create and run unit tests for the CustomerRecord class
 @SecurityAgent Scan java-implementation/ for vulnerabilities
@@ -166,7 +166,7 @@ Custom agents are defined in `.github/agents/` as Markdown files with YAML front
 
 | Agent | File | Model | Purpose |
 |-------|------|-------|---------|
-| **ProgramManager** | `my-pm.agent.md` | Claude Opus 4.6 | Analyzes PL/I source files and creates comprehensive documentation in `translation/`. Never writes Java code. Hands off to DeveloperAgent. |
+| **ProgramManager** | `my-pm.agent.md` | Claude Opus 4.6 | Analyzes PL/I source files in `pli_src/` and creates comprehensive documentation in `translation/`. Never writes Java code. Hands off to DeveloperAgent. |
 | **DeveloperAgent** | `my-developer.agent.md` | Claude Opus 4.6 (fast) | Implements Java 21 code from specs in `translation/`. Compiles after every change. Uses `BigDecimal` for decimals, composition for I/O. |
 | **TesterAgent** | `my-tester.agent.md` | Gemini 3 Pro | Validates Java with JUnit 5 unit, integration, and E2E tests. Coverage targets: Data Models 95%, Business Logic 90%, I/O 80%, Utilities 70%. |
 | **SecurityAgent** | `my-security.agent.md` | GPT-5.3-Codex | SAST, SCA, infrastructure, and OWASP compliance analysis. Produces `security-reports/security-report.md`. |
@@ -213,7 +213,7 @@ Skills are reusable instruction sets stored in `.github/skills/`. Each skill fol
 Agents hand off to each other automatically. The full PL/I → Java pipeline:
 
 ```
-1. @ProgramManager  → Reads PL/I, writes translation/ specs (never touches Java)
+1. @ProgramManager  → Reads PL/I from pli_src/, writes translation/ specs (never touches Java)
         ↓ handoff
 2. @DeveloperAgent  → Implements Java 21 from specs in translation/
         ↓ handoff
@@ -271,7 +271,7 @@ Before deploying, ensure the following tools are installed and configured:
 - The following **Azure resource providers** must be registered on your subscription:
   - `Microsoft.Search` (Azure AI Search)
   - `Microsoft.Storage` (Storage Account)
-  - `Microsoft.CognitiveServices` (Azure OpenAI)
+  - `Microsoft.CognitiveServices` (Azure AI Foundry)
   - `Microsoft.App` (Container Apps)
   - `Microsoft.ContainerRegistry` (Container Registry)
   - `Microsoft.OperationalInsights` (Log Analytics)
@@ -353,7 +353,7 @@ The deployment will create:
 - ✅ Container Registry
 - ✅ Azure AI Search
 - ✅ Storage Account
-- ✅ Azure OpenAI
+- ✅ Azure AI Foundry
 - ✅ Log Analytics
 - ✅ Managed Identity with RBAC roles
 
@@ -668,7 +668,7 @@ To tear down all deployed Azure resources and free up costs:
 ./cleanup.sh --resource-group "my-rg" --purge-all --yes
 ```
 
-> **Why purge?** Azure OpenAI and API Management use soft-delete by default. Use `--purge-all` to free the resource names for reuse.
+> **Why purge?** Azure AI Foundry and API Management use soft-delete by default. Use `--purge-all` to free the resource names for reuse.
 
 Or use the DevOps agent:
 

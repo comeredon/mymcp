@@ -63,3 +63,9 @@ REVIEW_*.md
 CLEANUP_SUMMARY.md
 
 infra/main.json
+
+# PL/I translation reference materials (proprietary, not committed)
+translation/
+
+# PL/I source code (proprietary, not committed)
+pli_src/

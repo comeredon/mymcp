@@ -194,10 +194,10 @@ else {
     }
 }
 
-# Purge soft-deleted Cognitive Services (Azure OpenAI)
+# Purge soft-deleted Cognitive Services (Azure AI Foundry)
 if ($PurgeCognitive) {
     Write-Host ""
-    Write-Host "🔥 Purging soft-deleted Cognitive Services resources..."
+    Write-Host "🔥 Purging soft-deleted Cognitive Services / AI Foundry resources..."
     $deleted = az cognitiveservices account list-deleted --query "[].{name:name, location:location}" --output json 2>$null | ConvertFrom-Json
     $count = $deleted.Count
 
@@ -228,7 +228,7 @@ Write-Host ""
 Write-Host "🧹 Cleanup complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "   Resource group '$ResourceGroupName': Deletion initiated"
-if ($PurgeCognitive) { Write-Host "   Cognitive Services (OpenAI): Purged" }
+if ($PurgeCognitive) { Write-Host "   Cognitive Services (AI Foundry): Purged" }
 if ($PurgeApim) { Write-Host "   API Management: Purged" }
 if ($PurgeKeyvault) { Write-Host "   Key Vault: Purged" }
 if ($PurgeStorage) { Write-Host "   Storage Account: Purged" }

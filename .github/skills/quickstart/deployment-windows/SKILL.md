@@ -101,7 +101,7 @@ $containerAppName   = $outputs.CONTAINER_APP_NAME.value
 $managedIdentityId  = $outputs.MANAGED_IDENTITY_ID.value
 $searchEndpoint     = $outputs.SEARCH_ENDPOINT.value
 $storageAccountName = $outputs.STORAGE_ACCOUNT_NAME.value
-$openAiEndpoint     = $outputs.AZURE_OPENAI_ENDPOINT.value
+$aiFoundryEndpoint  = $outputs.AI_FOUNDRY_ENDPOINT.value
 $mcpPublicEndpoint  = $outputs.MCP_PUBLIC_ENDPOINT.value
 $apimName           = if ($outputs.APIM_NAME) { $outputs.APIM_NAME.value } else { "" }
 
@@ -196,7 +196,7 @@ Write-Host "✅ Container App updated" -ForegroundColor Green
 $env:SEARCH_ENDPOINT              = $searchEndpoint
 $env:STORAGE_ACCOUNT_ID           = $outputs.STORAGE_ACCOUNT_ID.value
 $env:STORAGE_ACCOUNT_NAME         = $storageAccountName
-$env:AZURE_OPENAI_ENDPOINT        = $openAiEndpoint
+$env:AI_FOUNDRY_ENDPOINT           = $aiFoundryEndpoint
 $env:AI_FOUNDRY_SERVICES_SUBDOMAIN_URL = $outputs.AI_FOUNDRY_SERVICES_SUBDOMAIN_URL.value
 $env:AZURE_SUBSCRIPTION_ID        = $outputs.AZURE_SUBSCRIPTION_ID.value
 $env:AZURE_RESOURCE_GROUP_NAME    = $outputs.AZURE_RESOURCE_GROUP_NAME.value
@@ -240,7 +240,7 @@ After uploading, the indexer will automatically pick up new documents. To trigge
 ```powershell
 $token = az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv
 $headers = @{ "Authorization" = "Bearer $token" }
-Invoke-RestMethod -Uri "$searchEndpoint/indexers/pdf-indexer/run?api-version=2025-05-01-Preview" `
+Invoke-RestMethod -Uri "$searchEndpoint/indexers/pdf-indexer/run?api-version=2025-11-01-Preview" `
     -Method POST -Headers $headers
 ```
 

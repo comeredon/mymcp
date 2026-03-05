@@ -1,13 +1,13 @@
 ---
 name: wsl2-cleanup
-description: Tear down all Azure resources created by deploy.sh for the MCP Azure PDF Server. Use this skill to clean up a deployment from Ubuntu running in WSL2, including purging soft-deleted resources (OpenAI, APIM, Key Vault, Storage) so names can be reused.
+description: Tear down all Azure resources created by deploy.sh for the MCP Azure PDF Server. Use this skill to clean up a deployment from Ubuntu running in WSL2, including purging soft-deleted resources (AI Foundry, APIM, Key Vault, Storage) so names can be reused.
 ---
 
 # Cleanup — MCP Azure PDF Server on WSL2
 
 ## Overview
 
-This skill removes all Azure resources deployed by `deploy.sh` and purges soft-deleted resources (Azure OpenAI, APIM, Key Vault, Storage Account) so resource names can be reused immediately.
+This skill removes all Azure resources deployed by `deploy.sh` and purges soft-deleted resources (Azure AI Foundry, APIM, Key Vault, Storage Account) so resource names can be reused immediately.
 
 ## Prerequisites
 
@@ -69,7 +69,7 @@ bash cleanup.sh --purge-all
 | Flag | Description |
 |------|-------------|
 | `--resource-group NAME` | Resource group to delete (default: `mcp-server-rg`) |
-| `--purge-cognitive` | Purge soft-deleted Azure OpenAI / Cognitive Services resources |
+| `--purge-cognitive` | Purge soft-deleted Azure AI Foundry / Cognitive Services resources |
 | `--purge-apim` | Purge soft-deleted API Management instances |
 | `--purge-keyvault` | Purge soft-deleted Key Vault instances |
 | `--purge-storage` | Purge soft-deleted Storage Account instances |
@@ -88,7 +88,7 @@ az group show --name mcp-server-rg 2>/dev/null && echo "⚠️ Still exists" || 
 Check for remaining soft-deleted resources:
 
 ```bash
-# Cognitive Services / OpenAI
+# Cognitive Services / AI Foundry
 az cognitiveservices account list-deleted -o table
 
 # APIM
@@ -112,7 +112,7 @@ az storage account list --include-deleted --query "[?deletedTime != null].{name:
 | Container App + Environment | Deleted with group |
 | Azure AI Search | Deleted with group |
 | Storage Account | Deleted with group (blobs lost) → soft-deleted → purged with `--purge-storage` |
-| Azure OpenAI | Soft-deleted → purged with `--purge-cognitive` |
+| Azure AI Foundry | Soft-deleted → purged with `--purge-cognitive` |
 | API Management | Soft-deleted → purged with `--purge-apim` |
 | Key Vault | Soft-deleted → purged with `--purge-keyvault` |
 | Managed Identity + Roles | Deleted with group |

@@ -45,7 +45,7 @@ search_service=$(az resource list --resource-group "$RESOURCE_GROUP_NAME" \
 if [[ -n "$search_service" ]]; then
     TOKEN=$(az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv)
     BASE="https://$search_service.search.windows.net"
-    API="api-version=2025-05-01-Preview"
+    API="api-version=2025-11-01-Preview"
 
     # Delete in order: indexer → skillset → index → datasource
     for component in "indexers/pdf-indexer" "skillsets/pdf-skillset" "indexes/pdf-index" "datasources/pdf-datasource"; do
@@ -69,7 +69,7 @@ To wait for completion:
 az group wait --name "$RESOURCE_GROUP_NAME" --deleted --timeout 600 2>/dev/null || true
 ```
 
-## Step 5: Purge Soft-Deleted Cognitive Services (Azure OpenAI)
+## Step 5: Purge Soft-Deleted Cognitive Services (Azure AI Foundry)
 
 Soft-deleted Cognitive Services resources block name reuse. Purge them:
 
@@ -183,7 +183,7 @@ bash cleanup.sh --resource-group my-custom-rg --purge-all --yes
 | Flag | Description |
 |------|-------------|
 | `--resource-group NAME` | Resource group to delete (default: `mcp-server-rg`) |
-| `--purge-cognitive` | Purge soft-deleted Azure OpenAI |
+| `--purge-cognitive` | Purge soft-deleted Azure AI Foundry |
 | `--purge-apim` | Purge soft-deleted API Management |
 | `--purge-keyvault` | Purge soft-deleted Key Vaults |
 | `--purge-storage` | Purge soft-deleted Storage Accounts |

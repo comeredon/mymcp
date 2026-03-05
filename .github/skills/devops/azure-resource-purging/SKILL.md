@@ -19,7 +19,7 @@ Many Azure services use soft-delete by default, which prevents immediate name re
   - **API Management**: `API Management Service Contributor` or `Contributor`
   - **Storage Account**: `Storage Account Contributor` or `Contributor`
 
-## 1. Cognitive Services (Azure OpenAI)
+## 1. Cognitive Services (Azure AI Foundry)
 
 ### List soft-deleted instances
 

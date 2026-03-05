@@ -56,7 +56,7 @@ Write-Host "`nDeploying Azure infrastructure..." -ForegroundColor Yellow
 Write-Host "This will create:" -ForegroundColor Cyan
 Write-Host "  - Azure AI Search service" -ForegroundColor White
 Write-Host "  - Storage Account (for PDF documents)" -ForegroundColor White
-Write-Host "  - Azure OpenAI (with embeddings & chat models)" -ForegroundColor White
+Write-Host "  - Azure AI Foundry (with embeddings & chat models)" -ForegroundColor White
 Write-Host "  - Container Apps Environment" -ForegroundColor White
 Write-Host "  - Container Registry" -ForegroundColor White
 Write-Host "  - Log Analytics Workspace" -ForegroundColor White
@@ -121,8 +121,8 @@ $searchEndpoint = $outputs.SEARCH_ENDPOINT.value
 $searchServiceName = $outputs.SEARCH_SERVICE_NAME.value
 $storageAccountName = $outputs.STORAGE_ACCOUNT_NAME.value
 $storageBlobEndpoint = $outputs.STORAGE_BLOB_ENDPOINT.value
-$openAiName = $outputs.AZURE_OPENAI_NAME.value
-$openAiEndpoint = $outputs.AZURE_OPENAI_ENDPOINT.value
+$aiFoundryName = $outputs.AI_FOUNDRY_NAME.value
+$aiFoundryEndpoint = $outputs.AI_FOUNDRY_ENDPOINT.value
 $mcpServerInternalUri = $outputs.MCP_SERVER_INTERNAL_URI.value
 $mcpPublicEndpoint = $outputs.MCP_PUBLIC_ENDPOINT.value
 $managedIdentityName = $outputs.MANAGED_IDENTITY_NAME.value
@@ -246,14 +246,14 @@ Write-Host "  Name:            $storageAccountName" -ForegroundColor White
 Write-Host "  Blob Endpoint:   $storageBlobEndpoint" -ForegroundColor White
 Write-Host "  Containers:      pdfs, documents" -ForegroundColor White
 Write-Host ""
-Write-Host "🤖 Azure OpenAI" -ForegroundColor Cyan
-Write-Host "  Name:            $openAiName" -ForegroundColor White
-Write-Host "  Endpoint:        $openAiEndpoint" -ForegroundColor White
-Write-Host "  Deployments:     embeddings (text-embedding-ada-002), chat (gpt-4o)" -ForegroundColor White
+Write-Host "🤖 Azure AI Foundry" -ForegroundColor Cyan
+Write-Host "  Name:            $aiFoundryName" -ForegroundColor White
+Write-Host "  Endpoint:        $aiFoundryEndpoint" -ForegroundColor White
+Write-Host "  Deployments:     embeddings (text-embedding-3-large), chat (gpt-4o)" -ForegroundColor White
 Write-Host ""
 Write-Host "🔐 Identity & Access" -ForegroundColor Cyan
 Write-Host "  Managed Identity: $managedIdentityName" -ForegroundColor White
-Write-Host "  Role Assignments: Search Contributor, Storage Blob Contributor, OpenAI User, ACR Pull" -ForegroundColor White
+Write-Host "  Role Assignments: Search Contributor, Storage Blob Contributor, AI Foundry User, ACR Pull" -ForegroundColor White
 Write-Host ""
 Write-Host "📝 Next Steps" -ForegroundColor Cyan
 Write-Host "=============" -ForegroundColor Cyan

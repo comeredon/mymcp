@@ -30,7 +30,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --resource-group NAME   Resource group to delete (default: mcp-server-rg)"
-            echo "  --purge-cognitive       Purge soft-deleted Azure OpenAI resource (frees the name)"
+            echo "  --purge-cognitive       Purge soft-deleted Azure AI Foundry resource (frees the name)"
             echo "  --purge-apim            Purge soft-deleted APIM instance (frees the name)"
             echo "  --purge-keyvault        Purge soft-deleted Key Vault instances (frees the name)"
             echo "  --purge-storage         Purge soft-deleted Storage Account instances (frees the name)"
@@ -170,10 +170,10 @@ else
     fi
 fi
 
-# Purge soft-deleted Cognitive Services (Azure OpenAI)
+# Purge soft-deleted Cognitive Services (Azure AI Foundry)
 if [[ "$PURGE_COGNITIVE" == "true" ]]; then
     echo ""
-    echo "🔥 Purging soft-deleted Cognitive Services resources..."
+    echo "🔥 Purging soft-deleted Cognitive Services / AI Foundry resources..."
     deleted=$(az cognitiveservices account list-deleted --query "[].{name:name, location:location}" -o json 2>/dev/null || echo "[]")
     count=$(echo "$deleted" | jq length)
 

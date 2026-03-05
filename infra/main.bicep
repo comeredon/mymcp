@@ -28,8 +28,8 @@ param containerAppConfig object = {
   maxReplicas: 10
 }
 
-@description('Azure OpenAI deployment configuration')
-param openAiConfig object = {
+@description('Azure AI Foundry model deployment configuration')
+param aiFoundryConfig object = {
   deployEmbeddings: true
   embeddingsModel: 'text-embedding-3-large'  // Modern, cost-effective, 3072 dimensions
   embeddingsModelVersion: '1'
@@ -107,48 +107,9 @@ module storageAccount 'core/storage/storage-account.bicep' = {
   }
 }
 
-// Azure OpenAI / Cognitive Services
-module openAi 'core/ai/cognitiveservices.bicep' = {
-  name: 'openai'
-  params: {
-    name: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
-    location: location
-    tags: tags
-    kind: 'OpenAI'
-    customSubDomainName: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
-    disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
-    deployments: concat(
-      openAiConfig.deployEmbeddings ? [{
-        name: 'embeddings'
-        model: {
-          format: 'OpenAI'
-          name: openAiConfig.embeddingsModel
-          version: openAiConfig.embeddingsModelVersion
-        }
-        sku: {
-          name: 'Standard'
-          capacity: 120
-        }
-      }] : [],
-      openAiConfig.deployGpt ? [{
-        name: 'chat'
-        model: {
-          format: 'OpenAI'
-          name: openAiConfig.gptModel
-          version: openAiConfig.gptModelVersion
-        }
-        sku: {
-          name: 'Standard'
-          capacity: 30
-        }
-      }] : []
-    )
-  }
-}
-
-// Azure AI Foundry Services (multi-service resource for skillset billing)
-module aiFoundryServices 'core/ai/cognitiveservices.bicep' = {
-  name: 'ai-foundry-services'
+// Azure AI Foundry (AIServices) — unified multi-service resource with model deployments
+module aiFoundry 'core/ai/cognitiveservices.bicep' = {
+  name: 'ai-foundry'
   params: {
     name: 'aifs-${resourceToken}'
     location: location
@@ -156,6 +117,32 @@ module aiFoundryServices 'core/ai/cognitiveservices.bicep' = {
     kind: 'AIServices'
     customSubDomainName: 'aifs-${resourceToken}'
     disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
+    deployments: concat(
+      aiFoundryConfig.deployEmbeddings ? [{
+        name: 'embeddings'
+        model: {
+          format: 'OpenAI'
+          name: aiFoundryConfig.embeddingsModel
+          version: aiFoundryConfig.embeddingsModelVersion
+        }
+        sku: {
+          name: 'Standard'
+          capacity: 120
+        }
+      }] : [],
+      aiFoundryConfig.deployGpt ? [{
+        name: 'chat'
+        model: {
+          format: 'OpenAI'
+          name: aiFoundryConfig.gptModel
+          version: aiFoundryConfig.gptModelVersion
+        }
+        sku: {
+          name: 'Standard'
+          capacity: 30
+        }
+      }] : []
+    )
   }
 }
 
@@ -374,20 +361,16 @@ module mcpServer 'core/host/container-app.bicep' = {
         value: 'pdfs'
       }
       {
-        name: 'AZURE_OPENAI_ENDPOINT'
-        value: openAi.outputs.endpoint
+        name: 'AI_FOUNDRY_ENDPOINT'
+        value: aiFoundry.outputs.endpoint
       }
       {
-        name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+        name: 'AI_FOUNDRY_EMBEDDING_DEPLOYMENT'
         value: 'embeddings'
       }
       {
-        name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
+        name: 'AI_FOUNDRY_CHAT_DEPLOYMENT'
         value: 'chat'
-      }
-      {
-        name: 'AI_FOUNDRY_SERVICES_ENDPOINT'
-        value: aiFoundryServices.outputs.endpoint
       }
       {
         name: 'AZURE_CLIENT_ID'  // User-assigned MI client ID - used by DefaultAzureCredential for deterministic MI auth
@@ -479,9 +462,9 @@ module storageBlobContributorRole 'core/security/role.bicep' = {
   }
 }
 
-// Grant Cognitive Services OpenAI User role for managed identity
-module openAiUserRole 'core/security/role.bicep' = {
-  name: 'openai-user-role'
+// Grant Cognitive Services OpenAI User role for managed identity (AI Foundry)
+module aiFoundryUserRole 'core/security/role.bicep' = {
+  name: 'ai-foundry-user-role'
   params: {
     principalId: managedIdentity.outputs.principalId
     roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
@@ -508,20 +491,20 @@ module searchStorageContributorRole 'core/security/role.bicep' = {
   }
 }
 
-module searchOpenAiUserRole 'core/security/role.bicep' = {
-  name: 'search-openai-user-role'
+module searchAiFoundryUserRole 'core/security/role.bicep' = {
+  name: 'search-ai-foundry-user-role'
   params: {
     principalId: searchService.outputs.principalId
-    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
+    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User (AI Foundry)
     principalType: 'ServicePrincipal'
   }
 }
 
-module searchCognitiveServicesUserRole 'core/security/role.bicep' = {
-  name: 'search-cognitive-services-user-role'
+module searchAiFoundryServicesUserRole 'core/security/role.bicep' = {
+  name: 'search-ai-foundry-services-user-role'
   params: {
     principalId: searchService.outputs.principalId
-    roleDefinitionId: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User (AIServices billing)
+    roleDefinitionId: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User (AI Foundry billing)
     principalType: 'ServicePrincipal'
   }
 }
@@ -555,10 +538,10 @@ output STORAGE_ACCOUNT_NAME string = storageAccount.outputs.name
 output STORAGE_ACCOUNT_ID string = storageAccount.outputs.id
 output STORAGE_BLOB_ENDPOINT string = storageAccount.outputs.blobEndpoint
 
-output AZURE_OPENAI_NAME string = openAi.outputs.name
-output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
-output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = 'embeddings'
-output AZURE_OPENAI_CHAT_DEPLOYMENT string = 'chat'
+output AI_FOUNDRY_NAME string = aiFoundry.outputs.name
+output AI_FOUNDRY_ENDPOINT string = aiFoundry.outputs.endpoint
+output AI_FOUNDRY_EMBEDDING_DEPLOYMENT string = 'embeddings'
+output AI_FOUNDRY_CHAT_DEPLOYMENT string = 'chat'
 
 output APIM_NAME string = deployApim ? apim!.outputs.name : ''
 output APIM_GATEWAY_URL string = deployApim ? apim!.outputs.gatewayUrl : ''
@@ -574,6 +557,5 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
 output MANAGED_IDENTITY_NAME string = managedIdentity.outputs.name
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
 output MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
-output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
-output AI_FOUNDRY_SERVICES_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
+output AI_FOUNDRY_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
 output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

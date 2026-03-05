@@ -96,7 +96,7 @@ echo "Deploying Azure infrastructure..."
 echo "This will create:"
 echo "  - Azure AI Search service"
 echo "  - Storage Account (for PDF documents)"
-echo "  - Azure OpenAI (with embeddings & chat models)"
+echo "  - Azure AI Foundry (with embeddings & chat models)"
 echo "  - Container Apps Environment"
 echo "  - Container Registry"
 echo "  - Log Analytics Workspace"
@@ -156,8 +156,8 @@ search_endpoint=$(echo "$outputs" | jq -r '.SEARCH_ENDPOINT.value')
 search_service_name=$(echo "$outputs" | jq -r '.SEARCH_SERVICE_NAME.value')
 storage_account_name=$(echo "$outputs" | jq -r '.STORAGE_ACCOUNT_NAME.value')
 storage_blob_endpoint=$(echo "$outputs" | jq -r '.STORAGE_BLOB_ENDPOINT.value')
-openai_name=$(echo "$outputs" | jq -r '.AZURE_OPENAI_NAME.value')
-openai_endpoint=$(echo "$outputs" | jq -r '.AZURE_OPENAI_ENDPOINT.value')
+ai_foundry_name=$(echo "$outputs" | jq -r '.AI_FOUNDRY_NAME.value')
+ai_foundry_endpoint=$(echo "$outputs" | jq -r '.AI_FOUNDRY_ENDPOINT.value')
 mcp_server_internal_uri=$(echo "$outputs" | jq -r '.MCP_SERVER_INTERNAL_URI.value')
 mcp_public_endpoint=$(echo "$outputs" | jq -r '.MCP_PUBLIC_ENDPOINT.value')
 managed_identity_name=$(echo "$outputs" | jq -r '.MANAGED_IDENTITY_NAME.value')
@@ -184,7 +184,7 @@ if [[ -n "$apim_name" ]]; then
     fi
 fi
 storage_account_id=$(echo "$outputs" | jq -r '.STORAGE_ACCOUNT_ID.value')
-ai_foundry_url=$(echo "$outputs" | jq -r '.AI_FOUNDRY_SERVICES_SUBDOMAIN_URL.value')
+ai_foundry_url=$(echo "$outputs" | jq -r '.AI_FOUNDRY_SUBDOMAIN_URL.value')
 search_index_name=$(echo "$outputs" | jq -r '.SEARCH_INDEX_NAME.value')
 subscription_id=$(echo "$outputs" | jq -r '.AZURE_SUBSCRIPTION_ID.value')
 resource_group_out=$(echo "$outputs" | jq -r '.AZURE_RESOURCE_GROUP_NAME.value')
@@ -247,8 +247,8 @@ echo "Deploying AI search pipeline..."
 export SEARCH_ENDPOINT="$search_endpoint"
 export STORAGE_ACCOUNT_ID="$storage_account_id"
 export STORAGE_ACCOUNT_NAME="$storage_account_name"
-export AZURE_OPENAI_ENDPOINT="$openai_endpoint"
-export AI_FOUNDRY_SERVICES_SUBDOMAIN_URL="$ai_foundry_url"
+export AI_FOUNDRY_ENDPOINT="$ai_foundry_endpoint"
+export AI_FOUNDRY_SUBDOMAIN_URL="$ai_foundry_url"
 export AZURE_SUBSCRIPTION_ID="$subscription_id"
 export AZURE_RESOURCE_GROUP_NAME="$resource_group_out"
 export INDEX_NAME="$search_index_name"
@@ -300,14 +300,14 @@ echo "  Name:            $storage_account_name"
 echo "  Blob Endpoint:   $storage_blob_endpoint"
 echo "  Containers:      pdfs, documents"
 echo ""
-echo "🤖 Azure OpenAI"
-echo "  Name:            $openai_name"
-echo "  Endpoint:        $openai_endpoint"
+echo "🤖 Azure AI Foundry"
+echo "  Name:            $ai_foundry_name"
+echo "  Endpoint:        $ai_foundry_endpoint"
 echo "  Deployments:     embeddings (text-embedding-3-large), chat (gpt-4o)"
 echo ""
 echo "🔐 Identity & Access"
 echo "  Managed Identity: $managed_identity_name"
-echo "  Role Assignments: Search Contributor, Storage Blob Contributor, OpenAI User, ACR Pull"
+echo "  Role Assignments: Search Contributor, Storage Blob Contributor, AI Foundry User, ACR Pull"
 echo ""
 echo "📝 Next Steps"
 echo "============="

@@ -73,7 +73,7 @@ check_resource "Microsoft.App/managedEnvironments"                 "Container Ap
 check_resource "Microsoft.App/containerApps"                       "Container App"
 check_resource "Microsoft.Search/searchServices"                   "AI Search Service"
 check_resource "Microsoft.Storage/storageAccounts"                 "Storage Account"
-check_resource "Microsoft.CognitiveServices/accounts"              "Azure OpenAI"
+check_resource "Microsoft.CognitiveServices/accounts"              "Azure AI Foundry"
 
 # Check container app status
 echo ""
@@ -108,9 +108,9 @@ if [[ -n "$storage_name" ]]; then
     done
 fi
 
-# Check Azure OpenAI deployments
+# Check Azure AI Foundry deployments
 echo ""
-echo "Checking Azure OpenAI deployments..."
+echo "Checking Azure AI Foundry deployments..."
 openai_name=$(echo "$resources" | jq -r '.[] | select(.type == "Microsoft.CognitiveServices/accounts") | .name' | head -1)
 if [[ -n "$openai_name" ]]; then
     deployments=$(az cognitiveservices account deployment list --name "$openai_name" \

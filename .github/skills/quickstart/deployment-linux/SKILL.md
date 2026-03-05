@@ -109,7 +109,7 @@ container_app_name=$(echo "$outputs" | jq -r '.CONTAINER_APP_NAME.value')
 managed_identity_id=$(echo "$outputs" | jq -r '.MANAGED_IDENTITY_ID.value')
 search_endpoint=$(echo "$outputs" | jq -r '.SEARCH_ENDPOINT.value')
 storage_account_name=$(echo "$outputs" | jq -r '.STORAGE_ACCOUNT_NAME.value')
-openai_endpoint=$(echo "$outputs" | jq -r '.AZURE_OPENAI_ENDPOINT.value')
+ai_foundry_endpoint=$(echo "$outputs" | jq -r '.AI_FOUNDRY_ENDPOINT.value')
 mcp_public_endpoint=$(echo "$outputs" | jq -r '.MCP_PUBLIC_ENDPOINT.value')
 apim_name=$(echo "$outputs" | jq -r '.APIM_NAME.value // empty')
 
@@ -207,7 +207,7 @@ echo "✅ Container App updated"
 export SEARCH_ENDPOINT="$search_endpoint"
 export STORAGE_ACCOUNT_ID=$(echo "$outputs" | jq -r '.STORAGE_ACCOUNT_ID.value')
 export STORAGE_ACCOUNT_NAME="$storage_account_name"
-export AZURE_OPENAI_ENDPOINT="$openai_endpoint"
+export AI_FOUNDRY_ENDPOINT="$ai_foundry_endpoint"
 export AI_FOUNDRY_SERVICES_SUBDOMAIN_URL=$(echo "$outputs" | jq -r '.AI_FOUNDRY_SERVICES_SUBDOMAIN_URL.value')
 export AZURE_SUBSCRIPTION_ID=$(echo "$outputs" | jq -r '.AZURE_SUBSCRIPTION_ID.value')
 export AZURE_RESOURCE_GROUP_NAME=$(echo "$outputs" | jq -r '.AZURE_RESOURCE_GROUP_NAME.value')
@@ -250,7 +250,7 @@ After uploading, the indexer will automatically pick up new documents. To trigge
 
 ```bash
 TOKEN=$(az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv)
-curl -X POST "$search_endpoint/indexers/pdf-indexer/run?api-version=2025-05-01-Preview" \
+curl -X POST "$search_endpoint/indexers/pdf-indexer/run?api-version=2025-11-01-Preview" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

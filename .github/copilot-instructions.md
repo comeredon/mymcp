@@ -2,7 +2,7 @@
 
 This repository serves two purposes:
 
-1. **PL/I to Java Translation** — Translating PL/I source code (PSAM1.pli, PSAM1LIB.pli, PSAM2.pli) to Java 21 using specialized AI agents
+1. **PL/I to Java Translation** — Translating PL/I source code (in `pli_src/`) to Java 21 using specialized AI agents
 2. **MCP Azure PDF Server** — A Model Context Protocol (MCP) server that indexes PDF documents in Azure AI Search and exposes search/fetch tools for GitHub Copilot agents
 
 ---
@@ -22,7 +22,7 @@ mymcp/
 ├── setup-search-pipeline.sh/.ps1      # AI Search pipeline (data source, index, skillset, indexer)
 ├── validate-deployment.sh/.ps1        # Post-deployment validation
 ├── TODO.md                            # Project backlog
-├── PSAM1.pli / PSAM1LIB.pli / PSAM2.pli  # PL/I source code
+├── pli_src/                           # PL/I source code (gitignored, not committed)
 ├── .github/
 │   ├── copilot-instructions.md        # This file
 │   ├── agents/                        # Custom AI agents
@@ -77,7 +77,7 @@ GitHub Copilot / MCP Clients
          ↓
   [Container App] ← Internal only (x-api-key injected by APIM)
          ↓
-  [Azure Services] ← AI Search (RBAC), Storage, OpenAI (Managed Identity)
+  [Azure Services] ← AI Search (RBAC), Storage, AI Foundry (Managed Identity)
 ```
 
 ### Technology Stack
@@ -89,7 +89,7 @@ GitHub Copilot / MCP Clients
 | Hosting | Azure Container Apps (internal ingress) |
 | Gateway | Azure API Management (Consumption tier) |
 | Search | Azure AI Search (RBAC-only, `disableLocalAuth: true`) |
-| AI | Azure OpenAI (`text-embedding-3-large`, `gpt-4o`) |
+| AI | Azure AI Foundry (`text-embedding-3-large`, `gpt-4o`) |
 | Storage | Azure Blob Storage (`pdfs` container) |
 | Infrastructure | Azure Bicep |
 | Identity | Managed Identity with RBAC role assignments |
