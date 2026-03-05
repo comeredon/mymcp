@@ -1,7 +1,7 @@
 ---
 name: DiagramAgent
 description: Diagram Agent - Generates C4 model diagrams for Java codebases
-model: Claude Opus 4.6 (fast mode) (Preview) (copilot)
+model: Claude Opus 4.6 (copilot)
 
 ---
 

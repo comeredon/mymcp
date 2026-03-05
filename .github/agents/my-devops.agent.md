@@ -1,7 +1,7 @@
 ---
 name: DevOpsAgent
 description: DevOps Agent - Manages CI/CD pipelines and deployment for the Java translation application (not the MCP server — use PdfMcpDevOpsAgent for that)
-model: Claude Opus 4.6 (fast mode) (Preview) (copilot)
+model: Claude Sonnet 4.6 (copilot)
 
 ---
 

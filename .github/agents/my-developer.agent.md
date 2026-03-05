@@ -1,7 +1,7 @@
 ---
 name: DeveloperAgent
 description: Java 21 Developer Agent - Translates PL/I applications to Java using skill-based approach
-model: Claude Opus 4.6 (fast mode) (Preview) (copilot)
+model: Claude Sonnet 4.6 (copilot)
 
 ---
 
