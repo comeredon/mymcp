@@ -13,7 +13,10 @@ param allowBlobPublicAccess bool = false
 param allowSharedKeyAccess bool = true
 param minimumTlsVersion string = 'TLS1_2'
 param supportsHttpsTrafficOnly bool = true
-param publicNetworkAccess string = 'Enabled'
+param publicNetworkAccess string = 'Disabled'
+
+@description('Virtual Network subnet IDs allowed to access storage')
+param allowedSubnetIds array = []
 
 param containers array = []
 
@@ -32,7 +35,11 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     publicNetworkAccess: publicNetworkAccess
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: !empty(allowedSubnetIds) ? 'Deny' : 'Allow'
+      virtualNetworkRules: [for subnetId in allowedSubnetIds: {
+        id: subnetId
+        action: 'Allow'
+      }]
     }
   }
 }

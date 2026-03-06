@@ -7,13 +7,20 @@ param tags object = {}
 param publisherEmail string
 param publisherName string
 param sku object = {
-  name: 'Consumption'
-  capacity: 0
+  name: 'Developer'
+  capacity: 1
 }
 param publicNetworkAccess string = 'Enabled'
 param backendUrl string = ''
 @secure()
 param apiKey string = ''
+
+@description('Resource ID of the VNet subnet for APIM VNet integration. Leave empty for no VNet integration.')
+param subnetResourceId string = ''
+
+@description('VNet integration type: None, External (public gateway + VNet access), Internal (VNet-only gateway)')
+@allowed(['None', 'External', 'Internal'])
+param virtualNetworkType string = 'None'
 
 resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = {
   name: name
@@ -24,6 +31,10 @@ resource apim 'Microsoft.ApiManagement/service@2023-05-01-preview' = {
     publisherEmail: publisherEmail
     publisherName: publisherName
     publicNetworkAccess: publicNetworkAccess
+    virtualNetworkType: virtualNetworkType
+    virtualNetworkConfiguration: !empty(subnetResourceId) ? {
+      subnetResourceId: subnetResourceId
+    } : null
   }
 }
 
@@ -269,8 +280,22 @@ resource fetchPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2
   }
 }
 
+// Dedicated subscription for MCP API consumers
+resource mcpSubscription 'Microsoft.ApiManagement/service/subscriptions@2023-05-01-preview' = {
+  parent: apim
+  name: 'mcp-subscription'
+  properties: {
+    displayName: 'MCP Server Subscription'
+    scope: api.id
+    state: 'active'
+    allowTracing: false
+  }
+}
+
 output id string = apim.id
 output name string = apim.name
 output gatewayUrl string = apim.properties.gatewayUrl
 output portalUrl string = apim.properties.portalUrl ?? ''
 output mcpApiUrl string = '${apim.properties.gatewayUrl}/mcp'
+// Subscription key is NOT output here (security best practice — avoid secrets in ARM outputs).
+// Retrieve at runtime: az rest --method POST --url '<apim-id>/subscriptions/mcp-subscription/listSecrets?api-version=2023-05-01-preview' --resource https://management.azure.com/

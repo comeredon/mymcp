@@ -1,370 +1,722 @@
 # MCP Azure PDF Knowledge Server
 
-A production-ready MCP (Model Context Protocol) server that provides semantic search and document retrieval over indexed PDF documents. Built with TypeScript/Express, deployed on Azure Container Apps behind API Management, and fully integrated with GitHub Copilot.
+A production-ready, secure REST API server that provides semantic search and document retrieval from indexed PDF documents. Deployed on Azure with enterprise-grade security using API Management as a gateway.
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         Azure (Sweden Central)                           │
+│                         Azure Subscription                               │
 │                                                                          │
 │  ┌────────────────────┐                                                 │
-│  │  GitHub Copilot /  │                                                 │
-│  │  MCP Client        │                                                 │
+│  │  GitHub Copilot    │                                                 │
+│  │  or MCP Client     │                                                 │
 │  └─────────┬──────────┘                                                 │
-│            │ HTTPS + Ocp-Apim-Subscription-Key                          │
+│            │ HTTPS                                                       │
 │            │                                                            │
 │  ┌─────────▼──────────────────────────────────────────────────┐        │
-│  │      Azure API Management (Consumption tier)                │        │
+│  │          Azure API Management (APIM)                        │        │
 │  │  ┌──────────────────────────────────────────────────┐      │        │
-│  │  │  MCP API (4 operations):                         │      │        │
-│  │  │  • GET  /mcp/health       (no auth)             │      │        │
-│  │  │  • POST /mcp/api/tools    (MCP JSON-RPC)        │      │        │
-│  │  │  • POST /mcp/api/search   (REST)                │      │        │
-│  │  │  • POST /mcp/api/fetch    (REST)                │      │        │
+│  │  │  MCP API Endpoints:                              │      │        │
+│  │  │  • /mcp/health          (no auth)               │      │        │
+│  │  │  • /mcp/api/tools       (auth via policy)       │      │        │
+│  │  │  • /mcp/api/search      (auth via policy)       │      │        │
+│  │  │  • /mcp/api/fetch       (auth via policy)       │      │        │
 │  │  └──────────────────────────────────────────────────┘      │        │
-│  │  Policy: injects x-api-key header → backend               │        │
-│  │  Rate limit: 100 calls / 60 seconds                        │        │
+│  │                                                              │        │
+│  │  Security: API Key injection via policy                     │        │
+│  │  Benefits: Rate limiting, monitoring, caching               │        │
 │  └──────────────────────┬───────────────────────────────────────┘        │
+│                         │ Internal Network                               │
 │                         │                                               │
 │  ┌──────────────────────▼────────────────────────────────────┐          │
-│  │      Container Apps Environment                           │          │
+│  │      Container Apps Environment (Internal Only)           │          │
 │  │  ┌────────────────────────────────────────────────┐       │          │
-│  │  │   MCP Server (Container App)                   │       │          │
-│  │  │   • Node.js 22 + TypeScript + Express          │       │          │
-│  │  │   • Helmet, CORS, rate limiting                │       │          │
-│  │  │   • API key auth (timing-safe, fail-closed)    │       │          │
-│  │  │   • User-assigned Managed Identity             │       │          │
-│  │  └────────┬───────────────┬───────────┬────────────┘       │          │
-│  └───────────┼───────────────┼───────────┼─────────────────────┘          │
-│              │               │           │                               │
-│     Managed Identity    Managed Identity │                               │
-│              │               │           │                               │
-│  ┌───────────▼──────┐ ┌─────▼────────┐ ┌▼──────────────────┐           │
-│  │ Azure AI Search   │ │ Storage Acct │ │ Azure OpenAI      │           │
-│  │ (AAD-only auth)   │ │ (no shared   │ │ (AAD-only auth)   │           │
-│  │                   │ │  key access) │ │                   │           │
-│  │ Index: pdf-index  │ │ Containers:  │ │ Deployments:      │           │
-│  │ • Semantic search │ │ • pdfs       │ │ • text-embedding  │           │
-│  │ • Vector search   │ │ • documents  │ │   -3-large        │           │
-│  │ • Hybrid ranking  │ │ • pdf-images │ │ • gpt-4o          │           │
-│  └──────────┬────────┘ └──────────────┘ └───────────────────┘           │
-│             │                                                            │
-│  ┌──────────▼────────┐  ┌──────────────┐  ┌──────────────────┐         │
-│  │ AI Foundry Svcs   │  │ Container    │  │ Log Analytics    │         │
-│  │ (skillset billing │  │ Registry     │  │ (centralized     │         │
-│  │  via Managed ID)  │  │ (ACR Pull    │  │  logging)        │         │
-│  └───────────────────┘  │  via MI)     │  └──────────────────┘         │
-│                          └──────────────┘                                │
+│  │  │   MCP Server Container App                     │       │          │
+│  │  │   • Express.js REST API                        │       │          │
+│  │  │   • Node.js 20 + TypeScript                    │       │          │
+│  │  │   • No direct external access                  │       │          │
+│  │  │   • Managed Identity authentication            │       │          │
+│  │  └────────┬───────────────────────┬────────────────┘       │          │
+│  └───────────┼───────────────────────┼─────────────────────────┘          │
+│              │                       │                                   │
+│              │ Managed Identity      │ Managed Identity                  │
+│              │                       │                                   │
+│  ┌───────────▼──────────┐   ┌───────▼──────────┐   ┌────────────────┐   │
+│  │  Azure AI Search     │   │  Storage Account │   │ AI Foundry     │   │
+│  │  ┌────────────────┐  │   │  ┌────────────┐  │   │  ┌────────┐   │   │
+│  │  │ PDF Index      │  │   │  │ Blob:      │  │   │  │ GPT-4o │   │   │
+│  │  │ Semantic       │  │   │  │ Documents  │  │   │  │ CU     │   │   │
+│  │  │ • Embeddings   │  │   │  │ • pdfs     │  │   │  │ Embed  │   │   │
+│  │  │ • Semantic     │  │   │  │ • documents│  │   │  └────────┘   │   │
+│  │  │   Search       │  │   │  └────────────┘  │   │               │   │
+│  │  └────────────────┘  │   └──────────────────┘   └────────────────┘   │
+│  └──────────────────────┘                                              │
+│                                                                         │
+│  ┌──────────────────────┐   ┌──────────────────────┐                  │
+│  │  Log Analytics       │   │  Container Registry  │                  │
+│  │  • Application Logs  │   │  • Docker Images     │                  │
+│  │  • APIM Logs         │   │  • ACR Pull via MI   │                  │
+│  │  • Monitoring        │   └──────────────────────┘                  │
+│  └──────────────────────┘                                              │
+│                                                                         │
+│  Security: Managed Identity + RBAC + Key Vault                         │
 └─────────────────────────────────────────────────────────────────────────┘
+
+Key Security Features:
+✅ Container App is INTERNAL ONLY - no direct external access
+✅ All traffic flows through API Management gateway
+✅ API keys managed securely via APIM policies
+✅ Managed Identity for service-to-service authentication
+✅ RBAC (Role-Based Access Control) for all Azure resources
+✅ TLS/HTTPS enforced on all endpoints
 ```
 
-## Security
+## 🔒 Security Architecture
 
-All services enforce **AAD-only authentication** — API keys and shared access keys are disabled across the board.
+### Multi-Layer Security
 
-| Layer | Controls |
-|-------|----------|
-| **API Management** | Subscription key required, x-api-key injected via policy, rate limiting (100/60s), CORS |
-| **Container App** | API key middleware (timing-safe comparison, fail-closed), Helmet security headers, 1 MB request limit |
-| **Data services** | `disableLocalAuth: true` on Search and OpenAI, `allowSharedKeyAccess: false` on Storage |
-| **Identity** | User-assigned Managed Identity for the app, system-assigned MI for Search indexer pipeline |
-| **RBAC** | 10 least-privilege role assignments (Search Index Data Contributor/Reader, Storage Blob Data Contributor/Reader, Cognitive Services OpenAI User, Cognitive Services User, ACR Pull, Search Service Contributor) |
+1. **API Management (Gateway)**
+   - Public-facing endpoint
+   - API key injection via policies
+   - Rate limiting and throttling
+   - Request/response transformation
+   - Monitoring and logging
 
-## Features
+2. **Container App (Internal)**
+   - No external ingress
+   - Only accessible from APIM within Azure network
+   - Managed Identity authentication
+   - No hardcoded credentials
 
-- **Semantic + Vector Hybrid Search** — Queries use Azure AI Search with semantic ranking and text-embedding-3-large vectors (kNN with floor of 50 for recall)
-- **Document Retrieval** — Fetch full document text or filter by specific page numbers
-- **MCP JSON-RPC Protocol** — Full MCP handshake (`initialize`, `tools/list`, `tools/call`) for GitHub Copilot integration
-- **Integrated Vectorization Pipeline** — Automated PDF ingestion using Document Layout skill, GPT-4o summarization, and OpenAI embeddings
-- **Infrastructure as Code** — Complete Bicep modules with parameterized deployment via Azure Developer CLI (`azd`)
-- **Auto-scaling** — Container App scales 1–10 replicas based on HTTP traffic
+3. **Data Services**
+   - Managed Identity authentication (no keys)
+   - RBAC for fine-grained access control
+   - Network security via service endpoints
+   - Encryption at rest and in transit
+
+## ✨ Features
+
+- 🔍 **Semantic Search**: AI-powered search across indexed PDF documents using Azure AI Search
+- 📄 **Document Retrieval**: Fetch full text or specific pages from PDF documents
+- 🤖 **GitHub Copilot Integration**: MCP-compatible endpoints for AI assistance
+- 🛡️ **Enterprise Security**: API Management gateway with managed identity authentication
+- 🌐 **RESTful API**: Simple HTTP endpoints with comprehensive documentation
+- 📊 **Monitoring**: Built-in health checks, logging, and Azure Monitor integration
+- 🔐 **Zero Trust**: Internal-only container app, all access via APIM gateway
+- ⚡ **Auto-scaling**: Automatic scaling based on demand
+- 🐳 **Container-based**: Deployed on Azure Container Apps for reliability
+
+## GitHub Copilot Integration
+
+### Setup
+
+1. **Deploy** the infrastructure using the deployment script
+2. **Get** the API Management URL from deployment outputs
+3. **Update** your `mcp.json`:
+   ```json
+   {
+     "mcpServers": {
+       "pdf-search-mcp": {
+         "type": "http",
+         "url": "https://your-apim-gateway.azure-api.net/mcp/api/tools",
+         "headers": {
+           "Content-Type": "application/json"
+         },
+         "tools": ["search", "fetch"]
+       }
+     }
+   }
+   ```
+
+4. **Use** with GitHub Copilot Chat:
+   ```
+   @copilot Search for "performance optimization" in my PDF documentation
+   @copilot What does the documentation say about configuration?
+   @copilot Find information about installation procedures
+   ```
+
+### Available Tools
+
+- **🔍 search** - Semantic search across indexed PDF documents
+- **📄 fetch** - Retrieve specific document content and pages
+
+## 🤖 GitHub Copilot Agents & Skills
+
+This repository ships with custom **AI agents** and **reusable skills** that extend GitHub Copilot to automate PL/I-to-Java translation, security analysis, testing, DevOps, and diagramming tasks.
+
+### What Are Custom Agents?
+
+Custom agents are defined in `.github/agents/` as Markdown files with YAML frontmatter (`name`, `description`, `model`, `handoffs`). GitHub Copilot discovers them automatically, making each agent available in Copilot Chat.
+
+**How to invoke an agent in Copilot Chat:**
+
+> Open GitHub Copilot Chat, type `@` and select the agent name (e.g. `@ProgramManager`), then describe your task.
+
+```
+@ProgramManager Analyze the PL/I files in pli_src/ and create translation documentation
+@DeveloperAgent Implement the Java 21 translation from the translation/ specs
+@TesterAgent Create and run unit tests for the CustomerRecord class
+@SecurityAgent Scan java-implementation/ for vulnerabilities
+@DevOpsAgent Create a GitHub Actions CI/CD pipeline for the Java app
+@DiagramAgent Generate C4 diagrams for the Java implementation
+```
+
+### Available Agents
+
+| Agent | File | Model | Purpose |
+|-------|------|-------|---------|
+| **ProgramManager** | `my-pm.agent.md` | Claude Opus 4.6 | Analyzes PL/I source files in `pli_src/` and creates comprehensive documentation in `translation/`. Never writes Java code. Hands off to DeveloperAgent. |
+| **DeveloperAgent** | `my-developer.agent.md` | Claude Opus 4.6 (fast) | Implements Java 21 code from specs in `translation/`. Compiles after every change. Uses `BigDecimal` for decimals, composition for I/O. |
+| **TesterAgent** | `my-tester.agent.md` | Gemini 3 Pro | Validates Java with JUnit 5 unit, integration, and E2E tests. Coverage targets: Data Models 95%, Business Logic 90%, I/O 80%, Utilities 70%. |
+| **SecurityAgent** | `my-security.agent.md` | GPT-5.3-Codex | SAST, SCA, infrastructure, and OWASP compliance analysis. Produces `security-reports/security-report.md`. |
+| **DevOpsAgent** | `my-devops.agent.md` | Claude Sonnet 4 | CI/CD pipelines (GitHub Actions), multi-stage Docker builds, and Azure deployment. |
+| **DiagramAgent** | `my-dagram.agend.md` | Claude Opus 4.6 (fast) | Generates C4 model diagrams (Context → Container → Component → Code) as PlantUML files under `docs/diagrams/c4/`. |
+
+### What Are Skills?
+
+Skills are reusable instruction sets stored in `.github/skills/`. Each skill folder contains a `SKILL.md` with focused, expert guidance that agents load dynamically based on the task phase. Agents load only the skills they need, keeping context lean.
+
+**Skill loading is automatic** — instruct an agent to load a skill by name:
+
+```
+@DeveloperAgent Load the development/type-mapping skill and implement the CustomerRecord model
+```
+
+### Available Skills
+
+| Category | Skill | Path | Purpose | Used By |
+|----------|-------|------|---------|---------|
+| **development** | `implementation-workflow` | `development/implementation-workflow` | Step-by-step PL/I→Java translation orchestration | DeveloperAgent |
+| **development** | `java-patterns` | `development/java-patterns` | Immutable models, I/O composition patterns | DeveloperAgent |
+| **development** | `type-mapping` | `development/type-mapping` | PL/I-to-Java type conversion rules | DeveloperAgent, ProgramManager |
+| **development** | `record-parsing` | `development/record-parsing` | Fixed-width byte-offset record parsing | DeveloperAgent |
+| **development** | `data-generation` | `development/data-generation` | Generate 80-byte test data records | DeveloperAgent |
+| **development** | `code-checklist` | `development/code-checklist` | Pre-compile quality checklist | DeveloperAgent |
+| **development** | `frontmatter-navigation` | `development/frontmatter-navigation` | Navigate `translation/` docs by frontmatter metadata | DeveloperAgent, ProgramManager |
+| **testing** | `test-planning` | `testing/test-planning` | Test strategy and coverage planning | TesterAgent |
+| **testing** | `unit-testing` | `testing/unit-testing` | JUnit 5 unit test patterns | TesterAgent |
+| **testing** | `integration-testing` | `testing/integration-testing` | File I/O and component integration tests | TesterAgent |
+| **testing** | `mocking` | `testing/mocking` | Mockito dependency mocking | TesterAgent |
+| **testing** | `test-data` | `testing/test-data` | Test fixtures and data setup | TesterAgent |
+| **testing** | `test-execution` | `testing/test-execution` | Run tests and generate JaCoCo reports | TesterAgent |
+| **devops** | `docker` | `devops/docker` | Multi-stage Dockerfile best practices | DevOpsAgent, SecurityAgent |
+| **devops** | `github-actions` | `devops/github-actions` | GitHub Actions workflow authoring | DevOpsAgent |
+| **devops** | `azure-deployment` | `devops/azure-deployment` | Azure Web App for Containers deployment | DevOpsAgent |
+| **devops** | `cicd-practices` | `devops/cicd-practices` | Pipeline security and quality gates | DevOpsAgent, SecurityAgent |
+| **build** | `build-validation` | `build/build-validation` | Maven build and validation workflow | DeveloperAgent, DevOpsAgent |
+| **security** | `code-scanning` | `security/code-scanning` | OWASP, SCA, container vulnerability scanning | SecurityAgent, DevOpsAgent |
+| **diagrams** | `plantuml-links` | `diagrams/plantuml-links` | Generate viewable PlantUML URLs | DiagramAgent |
+
+### End-to-End Translation Workflow
+
+Agents hand off to each other automatically. The full PL/I → Java pipeline:
+
+```
+1. @ProgramManager  → Reads PL/I from pli_src/, writes translation/ specs (never touches Java)
+        ↓ handoff
+2. @DeveloperAgent  → Implements Java 21 from specs in translation/
+        ↓ handoff
+3. @TesterAgent     → Creates and runs JUnit 5 tests, reports bugs
+        ↓
+4. @SecurityAgent   → Scans java-implementation/ for vulnerabilities
+        ↓
+5. @DevOpsAgent     → CI/CD pipelines, Docker, Azure deployment
+        ↓
+6. @DiagramAgent    → C4 architecture diagrams in docs/diagrams/c4/
+```
+
+### Automated Agentic Workflows
+
+Two GitHub Actions workflows are pre-configured to run agents automatically:
+
+| Workflow | Trigger | What It Does |
+|----------|---------|--------------|
+| **security-review-java** | Push to `main` with commit message containing `"adding java"` | Runs SecurityAgent scan; if vulnerabilities found, invokes DeveloperAgent to fix them and opens a PR |
+| **update-readme** | Push to `main` | Analyzes repo structure and creates a PR to update `README.md` |
+
+**To trigger the security workflow:**
+```bash
+git commit -m "feat: adding java implementation of customer service"
+git push
+# → SecurityAgent scans automatically; PR with fixes created if needed
+```
+
+> 💡 **Tip:** The `.github/copilot-instructions.md` file provides Copilot with repository-level context so agents understand the project conventions without needing extra prompting.
+
+---
 
 ## Quick Start
 
-### Prerequisites
+### 1. Prerequisites
 
-- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az --version`)
-- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) (`azd version`)
-- [Node.js 22+](https://nodejs.org/) (`node --version`)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running)
-- Azure subscription with Contributor access
+Before deploying, ensure the following tools are installed and configured:
 
-### 1. Deploy Infrastructure
+| Tool | Minimum Version | Check Command | Purpose |
+|------|----------------|---------------|---------|
+| **Azure CLI** | 2.50+ | `az --version` | Deploy infrastructure and manage Azure resources |
+| **Node.js** | 20.x | `node --version` | Build the TypeScript project |
+| **npm** | 9.x+ | `npm --version` | Install dependencies and run build scripts |
+| **Docker** | 20.x+ | `docker --version` | Build and push container images |
+| **jq** | 1.6+ | `jq --version` | Parse deployment outputs (`deploy.sh` only) |
+| **Bash** | 4.x+ | `bash --version` | Run `deploy.sh` (Linux/macOS) |
+| **PowerShell** | 7.x+ | `pwsh --version` | Run `deploy.ps1` (Windows/cross-platform) |
 
-```powershell
-# Login
+> **Note:** You only need **one** of Bash or PowerShell — pick whichever matches your environment.
+
+#### Azure Requirements
+
+- An **Azure subscription** with **Contributor** role (or higher)
+- Logged in to Azure CLI: `az login`
+- The following **Azure resource providers** must be registered on your subscription:
+  - `Microsoft.Search` (Azure AI Search)
+  - `Microsoft.Storage` (Storage Account)
+  - `Microsoft.CognitiveServices` (Azure AI Foundry)
+  - `Microsoft.App` (Container Apps)
+  - `Microsoft.ContainerRegistry` (Container Registry)
+  - `Microsoft.OperationalInsights` (Log Analytics)
+  - `Microsoft.ManagedIdentity` (Managed Identity)
+  - `Microsoft.ApiManagement` (API Management — if using `--deploy-apim`)
+  - `Microsoft.Network` (Virtual Network — if using `--deploy-vnet`)
+
+You can register a provider with:
+```bash
+az provider register --namespace Microsoft.Search
+```
+
+#### Verify All Prerequisites
+
+```bash
+# Check all required tools
+az --version
+node --version
+npm --version
+docker --version
+jq --version
+
+# Verify Azure login
+az account show --query "{name:name, user:user.name}" -o table
+```
+
+#### Automated Setup with DevOps Agent (WSL2/Ubuntu)
+
+If you're using GitHub Copilot Chat, the `@DevOpsAgent` can install and verify all dependencies needed to deploy the MCP Azure PDF Server:
+
+```
+@DevOpsAgent setup WSL2 and deploy MCP Azure PDF Server
+```
+
+This uses the `quickstart/wsl2-environment-setup` skill to install Azure CLI, Node.js 20, npm, Docker, jq, register Azure resource providers, and validate everything is ready to deploy to Azure.
+
+### 2. Deploy to Azure
+
+**Using Bash (Linux/macOS):**
+
+```bash
+# Login to Azure
 az login
-azd auth login
 
-# Initialize and deploy (provisions all Azure resources + builds and deploys container)
-azd up
+# Deploy everything (creates all resources including VNet, APIM, and internal-only Container App)
+./deploy.sh
+
+# Or customize deployment
+./deploy.sh \
+  --resource-group "my-rg" \
+  --location "eastus" \
+  --apim-publisher-email "admin@yourdomain.com" \
+  --apim-publisher-name "YourOrg"
 ```
 
-`azd up` will prompt for environment name, subscription, and location, then provision all resources via Bicep and deploy the container image.
-
-The deployment creates:
-
-| Resource | Purpose |
-|----------|---------|
-| API Management (Consumption) | Public gateway with subscription key auth |
-| Container App | Runs the MCP server (Node.js 22 + Express) |
-| Container Apps Environment | Hosting environment for the container |
-| Container Registry | Stores Docker images |
-| Azure AI Search (Basic) | Semantic + vector search index |
-| Azure OpenAI | text-embedding-3-large + gpt-4o deployments |
-| Azure AI Services | Multi-service resource for skillset billing (keyless) |
-| Storage Account | Blob containers for PDFs, documents, and images |
-| Log Analytics | Centralized application and infrastructure logging |
-| User-assigned Managed Identity | Service-to-service auth (10 RBAC roles) |
-| Virtual Network (optional) | Private networking (`deployVNet = true`) |
-
-### 2. Upload PDFs and Create the Search Pipeline
+**Using PowerShell (Windows/cross-platform):**
 
 ```powershell
-# Upload PDF files to the 'pdfs' blob container
-az storage blob upload --account-name <storage-account> --container-name pdfs `
-  --file ./my-document.pdf --name my-document.pdf --auth-mode login
+# Login to Azure
+az login
 
-# Deploy the integrated vectorization pipeline (data source, index, skillset, indexer)
-./setup-search-pipeline.ps1
+# Deploy everything (creates all resources including VNet, APIM, and internal-only Container App)
+./deploy.ps1 -ApimPublisherEmail "admin@yourdomain.com" -ApimPublisherName "YourOrg"
+
+# Or customize deployment
+./deploy.ps1 `
+  -ResourceGroupName "my-rg" `
+  -Location "eastus" `
+  -ApimPublisherEmail "admin@yourdomain.com" `
+  -ApimPublisherName "YourOrg"
 ```
 
-The pipeline script (`setup-search-pipeline.ps1`) uses API version `2025-11-01-preview` and creates:
-- **Data source** — connects to the `pdfs` blob container via Managed Identity
-- **Index** — `pdf-index` with text, vector (3072-dim), and metadata fields + semantic configuration
-- **Skillset** — Document Layout skill → GPT-4o ChatCompletion summarization → OpenAI embedding, with AI Services keyless billing
-- **Indexer** — runs the pipeline, chunking PDFs into searchable text + vector embeddings
+The deployment will create:
+- ✅ Resource group (or use existing)
+- ✅ Virtual Network (network isolation)
+- ✅ API Management gateway (public endpoint)
+- ✅ Container App (internal only — no direct external access)
+- ✅ Container Apps Environment (VNet-integrated)
+- ✅ Container Registry
+- ✅ Azure AI Search
+- ✅ Storage Account
+- ✅ Azure AI Foundry
+- ✅ Log Analytics
+- ✅ Managed Identity with RBAC roles
 
-### 3. Test Your Deployment
+**Important:** The Container App is deployed as **internal only** within a VNet. All external access must go through API Management. The deploy script first provisions infrastructure with a placeholder container image, then builds and pushes your real image to ACR, and finally updates the Container App to use it.
+
+### 3. Index Your PDF Documents
+
+After deployment, go to Azure Portal and:
+1. Navigate to your Azure AI Search service
+2. Create an index named 'pdf-index' (or the name you specified)
+3. Index your PDF documents using Azure AI Document Intelligence or custom indexing
+
+### 4. Test Your Deployment
 
 ```powershell
-# Get the APIM gateway URL
-$apimUrl = azd env get-value APIM_GATEWAY_URL
+# Get APIM Gateway URL from deployment output
+$apimUrl = "<your-apim-gateway-url>"  # e.g., https://apim-xxxxx.azure-api.net
 
-# Health check (no auth required)
-Invoke-RestMethod "$apimUrl/mcp/health"
+# Test health endpoint (no auth required)
+curl "$apimUrl/mcp/health"
 
-# List available MCP tools
-$body = @{ jsonrpc="2.0"; id=1; method="tools/list" } | ConvertTo-Json
-Invoke-RestMethod -Method POST "$apimUrl/mcp/api/tools" `
-  -Headers @{ "Content-Type"="application/json"; "Ocp-Apim-Subscription-Key"="<your-key>" } `
-  -Body $body
+# Test MCP tools endpoint
+curl -X POST "$apimUrl/mcp/api/tools" `
+  -H "Content-Type: application/json" `
+  -d '{"tool": "search", "arguments": {"query": "test", "top": 5}}'
 
-# Search your indexed PDFs
-$body = @{
-  jsonrpc = "2.0"; id = 2; method = "tools/call"
-  params = @{ name = "search"; arguments = @{ query = "installation guide"; top = 5 } }
-} | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Method POST "$apimUrl/mcp/api/tools" `
-  -Headers @{ "Content-Type"="application/json"; "Ocp-Apim-Subscription-Key"="<your-key>" } `
-  -Body $body
+# Test search endpoint directly
+curl -X POST "$apimUrl/mcp/api/search" `
+  -H "Content-Type: application/json" `
+  -d '{"query": "test", "top": 5}'
 ```
 
-### 4. Configure GitHub Copilot
+**Note:** API authentication is handled automatically by APIM policies. No API key header required from clients.
 
-Add the MCP server to your VS Code settings or workspace `mcp.json`:
+### 5. Configure GitHub Copilot
+
+Update your `mcp.json` with the APIM URL from deployment outputs:
 
 ```json
 {
   "mcpServers": {
     "pdf-search-mcp": {
       "type": "http",
-      "url": "https://<your-apim>.azure-api.net/mcp/api/tools",
+      "url": "https://your-apim-gateway.azure-api.net/mcp/api/tools",
       "headers": {
-        "Content-Type": "application/json",
-        "Ocp-Apim-Subscription-Key": "<your-subscription-key>"
+        "Content-Type": "application/json"
       }
     }
   }
 }
 ```
 
-Then use it in GitHub Copilot Chat — Copilot will automatically discover the `search` and `fetch` tools:
+## API Endpoints
 
+All endpoints are accessed through API Management. The base URL is: `https://<your-apim-gateway>.azure-api.net/mcp`
+
+### Health Check
 ```
-Search my PDFs for "configuration options"
-What does the documentation say about installation?
-Fetch the full content of document XYZ
+GET /mcp/health
 ```
+Returns service health status. No authentication required.
 
-## API Reference
-
-All endpoints are served through APIM at `https://<apim-name>.azure-api.net/mcp`.
-
-### `GET /mcp/health`
-
-Health check. No authentication required.
-
-```json
-{ "status": "healthy", "timestamp": "2025-02-26T...", "service": "mcp-azure-pdf" }
-```
-
-### `POST /mcp/api/tools` (MCP JSON-RPC)
-
-The primary endpoint for MCP clients (including GitHub Copilot). Supports the full MCP protocol:
-
-| Method | Description |
-|--------|-------------|
-| `initialize` | MCP handshake — returns server capabilities |
-| `tools/list` | Returns available tools (`search`, `fetch`) |
-| `tools/call` | Executes a tool with the given arguments |
-
-**Search** via `tools/call`:
+**Response:**
 ```json
 {
-  "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-  "params": {
-    "name": "search",
-    "arguments": { "query": "your search query", "top": 5 }
+  "status": "healthy"
+}
+```
+
+### MCP Tools Endpoint (for GitHub Copilot)
+```
+POST /mcp/api/tools
+Content-Type: application/json
+
+{
+  "tool": "search",
+  "arguments": {
+    "query": "your search query",
+    "top": 5
   }
 }
 ```
 
-**Fetch** via `tools/call`:
-```json
+**Available Tools:**
+- `search` - Semantic search across PDF documents
+- `fetch` - Retrieve specific document or pages
+
+### Search Endpoint
+```
+POST /mcp/api/search
+Content-Type: application/json
+
 {
-  "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-  "params": {
-    "name": "fetch",
-    "arguments": { "id": "document-id", "pages": [1, 2, 3] }
-  }
+  "query": "your search query",
+  "top": 5
 }
 ```
 
-### `POST /mcp/api/search` (REST)
+### Fetch Endpoint
+```
+POST /mcp/api/fetch
+Content-Type: application/json
 
-Direct search endpoint (non-MCP clients).
-
-```json
-{ "query": "your search query", "top": 5 }
+{
+  "id": "document-id",
+  "pages": [1, 2, 3]
+}
 ```
 
-### `POST /mcp/api/fetch` (REST)
-
-Direct document retrieval endpoint.
-
-```json
-{ "id": "document-id", "pages": [1, 2, 3] }
-```
+**Note:** API authentication is handled by APIM policies. The API key is injected automatically - no client-side authentication headers required.
 
 ## Configuration
 
-### Deployment Parameters (`infra/main.bicep`)
+### Two Types of Configuration Files
+
+This repository contains two separate configuration file systems:
+
+#### 1. Local Development (`.env.example` → `.env.local`)
+For running the MCP server locally on your development machine:
+- Copy `.env.example` to `.env.local`
+- Fill in values from your Azure resources
+- Used by `npm run dev-local`
+
+#### 2. Azure Deployment (`.azure/mcp/.env`)
+For deploying to Azure using Azure Developer CLI:
+- Configure deployment settings (region, environment name, etc.)
+- Used by `azd up` and `./deploy.ps1`
+- No secrets - only deployment configuration
+
+These serve different purposes and do not conflict.
+
+### Deployment Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `environmentName` | — | Unique environment name (generates resource token) |
-| `location` | `swedencentral` | Azure region |
-| `searchIndexName` | `pdf-index` | Search index name |
-| `searchServiceSku` | `basic` | AI Search tier |
-| `serverApiKey` | Auto-generated | API key for the MCP server |
-| `containerAppConfig` | 0.25 CPU / 0.5Gi / 1–10 replicas | Container sizing |
-| `openAiConfig` | text-embedding-3-large + gpt-4o | Model deployments |
-| `deployApim` | `true` | Deploy API Management gateway |
-| `deployVNet` | `false` | Deploy VNet for private networking |
-| `blobContainers` | pdfs, documents, pdf-images | Storage containers |
+| `ResourceGroupName` | `mcp-server-rg` | Azure resource group name |
+| `Location` | `swedencentral` | Azure region |
+| `EnvironmentName` | `mcp` | Environment identifier |
+| `SearchIndexName` | `pdf-index` | Name for your PDF search index |
+| `ApiKey` | Auto-generated | Custom API key (optional) |
 
-### Local Development
+### Post-Deployment Configuration
 
-```powershell
-# Copy and fill in environment variables
-cp .env.example .env.local
+After deployment, you'll receive all connection details including:
+- Azure AI Search endpoint and credentials
+- MCP Server URL
+- Generated API key
 
-# Build and run locally
-npm run dev-local
+Use these values to:
+1. Index your PDF documents in Azure AI Search
+2. Configure your client applications
+3. Set up local development environment (if needed)
+
+### Azure Resources
+
+The deployment creates:
+
+- **Resource Group**: Contains all resources
+- **Container Apps Environment**: Hosts the container
+- **Container Registry**: Stores container images
+- **AI Search Service**: Provides search capabilities
+- **Log Analytics**: Application monitoring
+- **Managed Identity**: Secure service authentication
+
+## Security
+
+- ✅ **Managed Identity**: No hardcoded credentials
+- ✅ **RBAC**: Least privilege access
+- ✅ **API Authentication**: Required for all MCP endpoints
+- ✅ **HTTPS**: Encrypted communication
+- ✅ **Container Security**: Non-root user
+
+## Scaling
+
+The container app automatically scales based on:
+- HTTP requests
+- CPU/Memory usage
+- Custom metrics
+
+Configure scaling in `infra/main.bicep`:
+```bicep
+param containerAppConfig object = {
+  cpu: '0.25'
+  memory: '0.5Gi'
+  minReplicas: 1
+  maxReplicas: 10
+}
+```
+
+## Monitoring
+
+- **Health Checks**: Built-in health endpoint
+- **Log Analytics**: Centralized logging
+- **Azure Monitor**: Metrics and alerts
+- **Container Insights**: Container performance
+
+## Development
+
+### Project Structure
+```
+├── src/
+│   └── server.ts                      # Main MCP server application
+├── infra/                             # Infrastructure as Code (Bicep)
+│   ├── main.bicep                    # Main deployment template
+│   ├── abbreviations.json            # Resource naming conventions
+│   └── core/                         # Reusable Bicep modules
+│       ├── ai/
+│       │   └── cognitiveservices.bicep
+│       ├── gateway/
+│       │   └── apim.bicep
+│       ├── host/
+│       │   ├── container-app.bicep
+│       │   ├── container-apps-environment.bicep
+│       │   └── container-registry.bicep
+│       ├── monitor/
+│       │   └── loganalytics.bicep
+│       ├── network/
+│       │   └── vnet.bicep
+│       ├── search/
+│       │   └── search-services.bicep
+│       ├── security/
+│       │   ├── managed-identity.bicep
+│       │   └── role.bicep
+│       └── storage/
+│           └── storage-account.bicep
+├── .azure/                           # Azure Developer CLI config
+│   ├── .env.template
+│   └── mcp/
+│       └── .env
+├── Dockerfile                        # Container definition
+├── azure.yaml                        # AZD configuration
+├── package.json                      # Node.js dependencies
+├── tsconfig.json                     # TypeScript configuration
+├── deploy.ps1                        # PowerShell deployment script
+├── validate-deployment.ps1           # Deployment validation script
+├── DEPLOYMENT.md                     # Detailed deployment guide
+├── DEPLOYMENT_CHECKLIST.md           # Validation checklist
+├── QUICKSTART.md                     # Quick reference guide
+├── SHARING.md                        # Guide for sharing this repo
+├── mcp.json                          # MCP client configuration template
+└── .env.example                      # Environment variables template
 ```
 
 ### Build Commands
 
 ```bash
-npm run build        # Compile TypeScript
-npm start            # Run compiled server
-npm run dev          # Build and run
-npm run dev-local    # Run with local .env.local
-npm run clean        # Remove dist/
+# Development
+npm run dev
+
+# Production build
+npm run build
+npm start
+
+# Clean build artifacts
+npm run clean
 ```
 
-## Project Structure
+## Troubleshooting
 
-```
-├── src/
-│   └── server.ts                     # MCP server (Express, MCP JSON-RPC, search, fetch)
-├── infra/                            # Infrastructure as Code (Bicep)
-│   ├── main.bicep                    # Main orchestrator (12 modules, 10 role assignments)
-│   ├── abbreviations.json            # Resource naming conventions
-│   └── core/
-│       ├── ai/cognitiveservices.bicep       # OpenAI + AI Services
-│       ├── gateway/apim.bicep               # API Management + MCP API
-│       ├── host/container-app.bicep         # Container App
-│       ├── host/container-apps-environment.bicep
-│       ├── host/container-registry.bicep    # ACR
-│       ├── monitor/loganalytics.bicep       # Log Analytics
-│       ├── network/vnet.bicep               # VNet (optional)
-│       ├── search/search-services.bicep     # Azure AI Search
-│       ├── security/managed-identity.bicep  # User-assigned MI
-│       ├── security/role.bicep              # RBAC assignments
-│       └── storage/storage-account.bicep    # Blob storage
-├── .github/
-│   ├── copilot-instructions.md       # Copilot repo-level context
-│   ├── agents/                       # Custom Copilot agents (6)
-│   ├── skills/                       # Reusable agent skills (6 categories)
-│   └── workflows/                    # GitHub Actions (security review)
-├── azure.yaml                        # Azure Developer CLI service config
-├── Dockerfile                        # Node.js 22 Alpine, non-root user, health check
-├── setup-search-pipeline.ps1         # Deploys data source, index, skillset, indexer
-├── setup-search-pipeline.http        # REST Client file for pipeline testing
-├── mcp.json                          # MCP client config template
-├── deploy.ps1                        # PowerShell deployment script
-├── validate-deployment.ps1           # Post-deployment validation
-├── dev-local.ps1                     # Local development launcher
-└── .env.example                      # Environment variables template
-```
+### Common Issues
 
-## Copilot Agents & Skills
+1. **Search Service Connection**: Verify endpoint and key
+2. **Container Startup**: Check environment variables
+3. **Authentication**: Ensure API key is correct
+4. **Index Not Found**: Verify search index exists
 
-This repository includes 6 custom GitHub Copilot agents and 17 reusable skills in `.github/agents/` and `.github/skills/`. These are designed for PL/I-to-Java translation workflows but can be adapted for other tasks.
+### Logs
 
-Invoke an agent in Copilot Chat with `@AgentName`:
-
-```
-@ProgramManager   — Analyze source code and create translation specs
-@DeveloperAgent   — Implement Java 21 code from specifications
-@TesterAgent      — Create and run JUnit 5 tests
-@SecurityAgent    — Scan code for vulnerabilities (OWASP)
-@DevOpsAgent      — CI/CD pipelines and Docker builds
-@DiagramAgent     — Generate C4 architecture diagrams
-```
-
-A GitHub Actions workflow (`security-review-java`) automatically triggers a security scan when Java code is pushed.
-
-## Monitoring
-
-```powershell
-# View application logs
+View application logs:
+```bash
 azd logs
 # or
 az containerapp logs show --name <app-name> --resource-group <rg-name> --tail 50
+```
 
-# Validate deployment health
+### Validation
+
+Use the validation script to check your deployment:
+
+**Bash (Linux/macOS/WSL2):**
+```bash
+./validate-deployment.sh --resource-group <your-rg-name>
+```
+
+**PowerShell (Windows):**
+```powershell
 .\validate-deployment.ps1 -ResourceGroupName <your-rg-name>
 ```
 
 ## Documentation
 
-- [QUICKSTART.md](./QUICKSTART.md) — Quick deployment reference
-- [DEPLOYMENT.md](./DEPLOYMENT.md) — Detailed deployment guide
-- [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) — Post-deployment validation checklist
-- [SECURITY.md](./SECURITY.md) — Security policy
-- [SHARING.md](./SHARING.md) — Guide for sharing this repository
+- 📘 **[QUICKSTART.md](./QUICKSTART.md)** - Quick reference for deployment and usage
+- 📗 **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Comprehensive deployment guide
+- 📝 **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Validation checklist
+- 🤝 **[SHARING.md](./SHARING.md)** - Guide for sharing this repository
+
+## Cleanup
+
+To tear down all deployed Azure resources and free up costs:
+
+```bash
+# Delete resource group (with confirmation prompt)
+./cleanup.sh
+
+# Delete without confirmation
+./cleanup.sh --yes
+
+# Delete and purge soft-deleted resources (recommended before redeploying)
+./cleanup.sh --purge-all --yes
+
+# Delete a custom resource group
+./cleanup.sh --resource-group "my-rg" --purge-all --yes
+```
+
+> **Why purge?** Azure AI Foundry and API Management use soft-delete by default. Use `--purge-all` to free the resource names for reuse.
+
+Or use the DevOps agent:
+
+```
+@DevOpsAgent clean up Azure resources
+```
 
 ## Contributing
 
-- **Fork freely** — adapt the code to your needs
-- **Pull requests welcome** — fork → feature branch → PR with description
-- **Protected main branch** — all changes require PR review and approval
-- **Submit issues** — report bugs or suggest enhancements via GitHub Issues
+**This repository is maintained for production use and has strict contribution guidelines:**
+
+### For Users
+- ✅ **Fork freely** - You're encouraged to fork this repository for your own use
+- ✅ **Customize** - Adapt the code to your specific needs
+- ✅ **Learn & Share** - Use this as a learning resource and share knowledge
+
+### For Contributors
+- 🔒 **Protected main branch** - Direct pushes are not allowed
+- ✅ **Submit issues** - Report bugs or suggest enhancements via GitHub Issues
+- ✅ **Pull requests welcome** - For bug fixes or improvements:
+  1. Fork the repository
+  2. Create a feature branch from `main`
+  3. Make your changes with clear commit messages
+  4. Test thoroughly (include test results if applicable)
+  5. Submit a pull request with detailed description
+  6. All PRs require approval and review before merge
+
+### Branch Protection Rules
+- ✅ Pull request reviews required (minimum 1 approval)
+- ✅ Linear history enforced (no merge commits)
+- ✅ Conversation resolution required before merge
+- ✅ Stale reviews dismissed on new pushes
+- ✅ No force pushes or branch deletions
+- ✅ Admin approval required for all changes
+
+**Note:** Only repository maintainers can merge changes to ensure code quality and security standards.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE) for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues, questions, or contributions, please:
+- Check the [documentation](#documentation)
+- Review [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)
+- Submit an issue on GitHub
+
+---
+
+**Ready to deploy?** Check out the [QUICKSTART.md](./QUICKSTART.md) guide!

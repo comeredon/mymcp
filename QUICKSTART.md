@@ -42,7 +42,7 @@ The script will display:
 - ✅ Container App Internal URL (not accessible externally)
 - ✅ Storage Account Name
 - ✅ Search Service Name
-- ✅ OpenAI Endpoint
+- ✅ AI Foundry Endpoint
 
 ### 2. Upload PDFs
 ```powershell
@@ -92,7 +92,7 @@ Update `mcp.json`:
 - Container Registry
 - AI Search
 - Storage Account
-- Azure OpenAI
+- Azure AI Foundry
 - Log Analytics
 - Managed Identity
 - **API Management (APIM Gateway - public endpoint)**
@@ -142,10 +142,10 @@ az containerapp update --name <app> --resource-group <rg>
 - Container Apps: ~$5-20/month
 - AI Search (Basic): ~$75/month
 - Storage: ~$2/month
-- Azure OpenAI: Pay per use
+- Azure AI Foundry: Pay per use
 - Container Registry: ~$5/month
 - **APIM (Consumption): ~$0.035 per 10K calls**
-- **Total: ~$87-102/month + OpenAI usage + APIM usage**
+- **Total: ~$87-102/month + AI Foundry usage + APIM usage**
 
 ## Support
 

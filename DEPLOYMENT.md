@@ -14,7 +14,7 @@ This guide walks you through deploying your MCP server to Azure. The deployment 
 - Permissions to create:
   - Resource Groups
   - Container Apps and Container Registry
-  - AI Search, Storage Accounts, Azure OpenAI
+  - AI Search, Storage Accounts, Azure AI Foundry
   - Managed Identities and Role Assignments
   - (Optional) API Management and Virtual Networks
 - Logged in to Azure CLI (`az login`)
@@ -32,7 +32,7 @@ This creates:
 - ✅ Resource group (if not exists)
 - ✅ Azure AI Search service
 - ✅ Storage Account (for PDF blobs)
-- ✅ Azure OpenAI (with embeddings & chat models)
+- ✅ Azure AI Foundry (with embeddings & chat models)
 - ✅ Container Apps Environment
 - ✅ Container Registry
 - ✅ Log Analytics Workspace
@@ -76,7 +76,7 @@ The deployment creates these Azure resources:
 3. **Storage Account**: For storing PDF documents
    - Containers: `pdfs`, `documents`
    - Standard LRS (configurable)
-4. **Azure OpenAI**: For RAG (Retrieval Augmented Generation)
+4. **Azure AI Foundry**: For RAG (Retrieval Augmented Generation)
    - Deployment: `embeddings` (text-embedding-3-large) - Modern, cost-effective, 3072 dimensions
    - Deployment: `chat` (gpt-4o 2024-08-06) - With vision capabilities for image/chart analysis
 5. **Container Apps Environment**: Hosts the MCP server
@@ -106,7 +106,7 @@ External Clients (Copilot, etc.)
          ↓
   [Container App] ← Internal only (no external access)
          ↓
-  [Azure Services] ← Search, Storage, OpenAI
+  [Azure Services] ← Search, Storage, AI Foundry
 ```
 
 - Container App has **internal ingress only** - not accessible from internet

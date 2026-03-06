@@ -12,9 +12,9 @@ param location string = 'swedencentral'
 @description('Name of the search index containing your PDF documents')
 param searchIndexName string = 'pdf-index'
 
-@description('Azure AI Search SKU')
+@description('Azure AI Search SKU - use standard (S1) or higher to avoid text extraction truncation (basic limits to 64KB per document)')
 @allowed(['free', 'basic', 'standard', 'standard2', 'standard3', 'storage_optimized_l1', 'storage_optimized_l2'])
-param searchServiceSku string = 'basic'
+param searchServiceSku string = 'standard'
 
 @description('Custom API key for the MCP server (optional - will generate if not provided)')
 @secure()
@@ -28,8 +28,8 @@ param containerAppConfig object = {
   maxReplicas: 10
 }
 
-@description('Azure OpenAI deployment configuration')
-param openAiConfig object = {
+@description('Azure AI Foundry model deployment configuration')
+param aiFoundryConfig object = {
   deployEmbeddings: true
   embeddingsModel: 'text-embedding-3-large'  // Modern, cost-effective, 3072 dimensions
   embeddingsModelVersion: '1'
@@ -47,8 +47,8 @@ param apimPublisherEmail string = 'admin@contoso.com'
 @description('Publisher name for APIM - REQUIRED if deployApim is true')
 param apimPublisherName string = 'Contoso'
 
-@description('Deploy Virtual Network for private networking')
-param deployVNet bool = false
+@description('Deploy Virtual Network for private networking (recommended for internal-only Container App)')
+param deployVNet bool = true
 
 @description('Blob container names to create in storage account')
 param blobContainers array = [
@@ -102,39 +102,40 @@ module storageAccount 'core/storage/storage-account.bicep' = {
     location: location
     tags: tags
     containers: blobContainers
-    allowSharedKeyAccess: false
+    allowSharedKeyAccess: false  // Security best practice from upstream
+    publicNetworkAccess: 'Enabled'
   }
 }
 
-// Azure OpenAI / Cognitive Services
-module openAi 'core/ai/cognitiveservices.bicep' = {
-  name: 'openai'
+// Azure AI Foundry (AIServices) — unified multi-service resource with model deployments
+module aiFoundry 'core/ai/cognitiveservices.bicep' = {
+  name: 'ai-foundry'
   params: {
-    name: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+    name: 'aifs-${resourceToken}'
     location: location
     tags: tags
-    kind: 'OpenAI'
-    customSubDomainName: '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+    kind: 'AIServices'
+    customSubDomainName: 'aifs-${resourceToken}'
     disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
     deployments: concat(
-      openAiConfig.deployEmbeddings ? [{
+      aiFoundryConfig.deployEmbeddings ? [{
         name: 'embeddings'
         model: {
           format: 'OpenAI'
-          name: openAiConfig.embeddingsModel
-          version: openAiConfig.embeddingsModelVersion
+          name: aiFoundryConfig.embeddingsModel
+          version: aiFoundryConfig.embeddingsModelVersion
         }
         sku: {
           name: 'Standard'
           capacity: 120
         }
       }] : [],
-      openAiConfig.deployGpt ? [{
+      aiFoundryConfig.deployGpt ? [{
         name: 'chat'
         model: {
           format: 'OpenAI'
-          name: openAiConfig.gptModel
-          version: openAiConfig.gptModelVersion
+          name: aiFoundryConfig.gptModel
+          version: aiFoundryConfig.gptModelVersion
         }
         sku: {
           name: 'Standard'
@@ -145,20 +146,100 @@ module openAi 'core/ai/cognitiveservices.bicep' = {
   }
 }
 
-// Azure AI Foundry Services (multi-service resource for skillset billing)
-module aiFoundryServices 'core/ai/cognitiveservices.bicep' = {
-  name: 'ai-foundry-services'
-  params: {
-    name: 'aifs-${resourceToken}'
-    location: location
-    tags: tags
-    kind: 'AIServices'
-    customSubDomainName: 'aifs-${resourceToken}'
-    disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
+// NOTE: Search pipeline (data source, index, skillset, indexer) is deployed via
+// setup-search-pipeline.sh after infrastructure deployment. ARM/Bicep cannot reliably
+// deploy search data-plane resources (child resources of Microsoft.Search/searchServices).
+
+// NSG for APIM subnet — required for APIM VNet integration
+resource apimNsg 'Microsoft.Network/networkSecurityGroups@2023-09-01' = if (deployVNet && deployApim) {
+  name: '${abbrs.networkNetworkSecurityGroups}apim-${resourceToken}'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowClientToApim'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '443'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 100
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowApimManagement'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '3443'
+          sourceAddressPrefix: 'ApiManagement'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 110
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowAzureLoadBalancer'
+        properties: {
+          protocol: '*'
+          sourcePortRange: '*'
+          destinationPortRange: '6390'
+          sourceAddressPrefix: 'AzureLoadBalancer'
+          destinationAddressPrefix: 'VirtualNetwork'
+          access: 'Allow'
+          priority: 120
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowStorageOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '443'
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'Storage'
+          access: 'Allow'
+          priority: 100
+          direction: 'Outbound'
+        }
+      }
+      {
+        name: 'AllowSqlOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '1433'
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'Sql'
+          access: 'Allow'
+          priority: 110
+          direction: 'Outbound'
+        }
+      }
+      {
+        name: 'AllowAzureMonitorOutbound'
+        properties: {
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRanges: ['443', '1886']
+          sourceAddressPrefix: 'VirtualNetwork'
+          destinationAddressPrefix: 'AzureMonitor'
+          access: 'Allow'
+          priority: 120
+          direction: 'Outbound'
+        }
+      }
+    ]
   }
 }
 
-// Virtual Network (optional)
+// Virtual Network — provides network isolation so Container App stays internal-only
 module vnet 'core/network/vnet.bicep' = if (deployVNet) {
   name: 'vnet'
   params: {
@@ -170,10 +251,19 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
       {
         name: 'container-apps'
         addressPrefix: '10.0.0.0/23'
+        delegations: [
+          {
+            name: 'Microsoft.App.environments'
+            properties: {
+              serviceName: 'Microsoft.App/environments'
+            }
+          }
+        ]
       }
       {
         name: 'apim'
         addressPrefix: '10.0.2.0/24'
+        networkSecurityGroupId: (deployApim) ? apimNsg.id : null
       }
       {
         name: 'private-endpoints'
@@ -183,7 +273,7 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
   }
 }
 
-// Container apps environment
+// Container apps environment — deployed into VNet subnet when VNet is enabled
 module containerAppsEnvironment 'core/host/container-apps-environment.bicep' = {
   name: 'container-apps-environment'
   params: {
@@ -191,6 +281,20 @@ module containerAppsEnvironment 'core/host/container-apps-environment.bicep' = {
     location: location
     tags: tags
     logAnalyticsWorkspaceName: logAnalytics.outputs.name
+    infrastructureSubnetId: deployVNet ? vnet!.outputs.subnets[0].id : ''
+  }
+}
+
+// Private DNS zone for internal Container Apps Environment
+// Required so APIM (in the same VNet) can resolve internal Container App FQDNs
+module privateDnsZone 'core/network/private-dns-zone.bicep' = if (deployVNet) {
+  name: 'private-dns-zone'
+  params: {
+    zoneName: containerAppsEnvironment.outputs.domain
+    vnetId: vnet!.outputs.id
+    staticIp: containerAppsEnvironment.outputs.staticIp
+    resourceToken: resourceToken
+    tags: tags
   }
 }
 
@@ -217,6 +321,9 @@ module managedIdentity 'core/security/managed-identity.bicep' = {
 // MCP server container app (INTERNAL ONLY - accessed via APIM)
 module mcpServer 'core/host/container-app.bicep' = {
   name: 'mcp-server'
+  dependsOn: [
+    acrPullRole   // Ensure AcrPull role is assigned before the container app registers the ACR identity
+  ]
   params: {
     name: '${abbrs.appContainerApps}mcp-${resourceToken}'
     location: location
@@ -224,10 +331,12 @@ module mcpServer 'core/host/container-app.bicep' = {
     containerAppsEnvironmentName: containerAppsEnvironment.outputs.name
     containerRegistryName: containerRegistry.outputs.name
     containerName: 'mcp-azure-pdf'
-    imageName: 'mcp-azure-pdf'
+    // imageName intentionally omitted — defaults to MCR placeholder on first deploy.
+    // deploy.sh updates the container with the real ACR image after pushing it.
     managedIdentityName: managedIdentity.outputs.name
-    external: true  // Must be true for APIM Consumption tier - cannot reach internal Container Apps without VNet integration
-                    // Security enforced by SERVER_API_KEY middleware (fail-closed) + APIM subscription key
+    external: true   // Accessible within the VNet. The Container Apps Environment is internal (internal: true),
+                      // so the FQDN is only resolvable inside the VNet. APIM (in the same VNet) routes traffic here.
+    workloadProfileName: 'Consumption'
     secrets: [
       {
         name: 'server-api-key'
@@ -252,20 +361,16 @@ module mcpServer 'core/host/container-app.bicep' = {
         value: 'pdfs'
       }
       {
-        name: 'AZURE_OPENAI_ENDPOINT'
-        value: openAi.outputs.endpoint
+        name: 'AI_FOUNDRY_ENDPOINT'
+        value: aiFoundry.outputs.endpoint
       }
       {
-        name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+        name: 'AI_FOUNDRY_EMBEDDING_DEPLOYMENT'
         value: 'embeddings'
       }
       {
-        name: 'AZURE_OPENAI_CHAT_DEPLOYMENT'
+        name: 'AI_FOUNDRY_CHAT_DEPLOYMENT'
         value: 'chat'
-      }
-      {
-        name: 'AI_FOUNDRY_SERVICES_ENDPOINT'
-        value: aiFoundryServices.outputs.endpoint
       }
       {
         name: 'AZURE_CLIENT_ID'  // User-assigned MI client ID - used by DefaultAzureCredential for deterministic MI auth
@@ -306,8 +411,14 @@ module apim 'core/gateway/apim.bicep' = if (deployApim) {
     tags: tags
     publisherEmail: apimPublisherEmail
     publisherName: apimPublisherName
+    sku: {
+      name: 'Developer'
+      capacity: 1
+    }
     backendUrl: 'https://${mcpServer.outputs.uri}'
     apiKey: generatedApiKey
+    virtualNetworkType: deployVNet ? 'External' : 'None'
+    subnetResourceId: deployVNet ? vnet!.outputs.subnets[1].id : ''
   }
 }
 
@@ -351,9 +462,9 @@ module storageBlobContributorRole 'core/security/role.bicep' = {
   }
 }
 
-// Grant Cognitive Services OpenAI User role for managed identity
-module openAiUserRole 'core/security/role.bicep' = {
-  name: 'openai-user-role'
+// Grant Cognitive Services OpenAI User role for managed identity (AI Foundry)
+module aiFoundryUserRole 'core/security/role.bicep' = {
+  name: 'ai-foundry-user-role'
   params: {
     principalId: managedIdentity.outputs.principalId
     roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
@@ -380,25 +491,25 @@ module searchStorageContributorRole 'core/security/role.bicep' = {
   }
 }
 
-module searchOpenAiUserRole 'core/security/role.bicep' = {
-  name: 'search-openai-user-role'
+module searchAiFoundryUserRole 'core/security/role.bicep' = {
+  name: 'search-ai-foundry-user-role'
   params: {
     principalId: searchService.outputs.principalId
-    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
+    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User (AI Foundry)
     principalType: 'ServicePrincipal'
   }
 }
 
-module searchCognitiveServicesUserRole 'core/security/role.bicep' = {
-  name: 'search-cognitive-services-user-role'
+module searchAiFoundryServicesUserRole 'core/security/role.bicep' = {
+  name: 'search-ai-foundry-services-user-role'
   params: {
     principalId: searchService.outputs.principalId
-    roleDefinitionId: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User (AIServices billing)
+    roleDefinitionId: 'a97b65f3-24c7-4388-baec-2e87135dc908' // Cognitive Services User (AI Foundry billing)
     principalType: 'ServicePrincipal'
   }
 }
 
-// Grant Search Service Contributor role to search service system MI
+// Grant Search Service Contributor role to search service system-assigned managed identity
 // Required when disableLocalAuth=true for indexer data-plane management (data sources, skillsets, indexers)
 module searchServiceContributorRole 'core/security/role.bicep' = {
   name: 'search-service-contributor-role'
@@ -427,19 +538,24 @@ output STORAGE_ACCOUNT_NAME string = storageAccount.outputs.name
 output STORAGE_ACCOUNT_ID string = storageAccount.outputs.id
 output STORAGE_BLOB_ENDPOINT string = storageAccount.outputs.blobEndpoint
 
-output AZURE_OPENAI_NAME string = openAi.outputs.name
-output AZURE_OPENAI_ENDPOINT string = openAi.outputs.endpoint
-output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = 'embeddings'
-output AZURE_OPENAI_CHAT_DEPLOYMENT string = 'chat'
+output AI_FOUNDRY_NAME string = aiFoundry.outputs.name
+output AI_FOUNDRY_ENDPOINT string = aiFoundry.outputs.endpoint
+output AI_FOUNDRY_EMBEDDING_DEPLOYMENT string = 'embeddings'
+output AI_FOUNDRY_CHAT_DEPLOYMENT string = 'chat'
 
 output APIM_NAME string = deployApim ? apim!.outputs.name : ''
 output APIM_GATEWAY_URL string = deployApim ? apim!.outputs.gatewayUrl : ''
 output APIM_MCP_API_URL string = deployApim ? apim!.outputs.mcpApiUrl : ''
+// APIM subscription key is NOT output here (security best practice — retrieve at runtime via az rest)
 
+output CONTAINER_APP_NAME string = mcpServer.outputs.name
 output MCP_SERVER_INTERNAL_URI string = mcpServer.outputs.uri
-output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name
+// MCP server API key is NOT output here (security best practice — retrieve at runtime via az containerapp secret show)
+output MCP_PUBLIC_ENDPOINT string = deployApim ? '${apim!.outputs.mcpApiUrl}/api/tools' : mcpServer.outputs.uri
+
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalytics.outputs.name  
 output MANAGED_IDENTITY_NAME string = managedIdentity.outputs.name
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.outputs.clientId
-output AI_FOUNDRY_SERVICES_ENDPOINT string = aiFoundryServices.outputs.endpoint
-output AI_FOUNDRY_SERVICES_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
+output MANAGED_IDENTITY_ID string = managedIdentity.outputs.id
+output AI_FOUNDRY_SUBDOMAIN_URL string = 'https://aifs-${resourceToken}.services.ai.azure.com'
 output SEARCH_SERVICE_PRINCIPAL_ID string = searchService.outputs.principalId

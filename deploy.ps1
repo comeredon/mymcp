@@ -7,10 +7,10 @@ param(
     [string]$Location = "swedencentral",
     [string]$SearchIndexName = "pdf-index",
     [string]$ApiKey = "",
-    [switch]$DeployApim = $false,
+    [bool]$DeployApim = $true,
     [string]$ApimPublisherEmail = "admin@contoso.com",
     [string]$ApimPublisherName = "Contoso",
-    [switch]$DeployVNet = $false
+    [bool]$DeployVNet = $true
 )
 
 Write-Host "🚀 MCP Azure PDF Server - Unified Deployment" -ForegroundColor Cyan
@@ -56,7 +56,7 @@ Write-Host "`nDeploying Azure infrastructure..." -ForegroundColor Yellow
 Write-Host "This will create:" -ForegroundColor Cyan
 Write-Host "  - Azure AI Search service" -ForegroundColor White
 Write-Host "  - Storage Account (for PDF documents)" -ForegroundColor White
-Write-Host "  - Azure OpenAI (with embeddings & chat models)" -ForegroundColor White
+Write-Host "  - Azure AI Foundry (with embeddings & chat models)" -ForegroundColor White
 Write-Host "  - Container Apps Environment" -ForegroundColor White
 Write-Host "  - Container Registry" -ForegroundColor White
 Write-Host "  - Log Analytics Workspace" -ForegroundColor White
@@ -86,18 +86,17 @@ if (-not [string]::IsNullOrEmpty($ApiKey)) {
     $deployParams += "serverApiKey=$ApiKey"
 }
 
+# Always pass APIM and VNet flags explicitly so Bicep gets the correct value
+$deployParams += "--parameters"
+$deployParams += "deployApim=$($DeployApim.ToString().ToLower())"
+$deployParams += "--parameters"
+$deployParams += "deployVNet=$($DeployVNet.ToString().ToLower())"
+
 if ($DeployApim) {
-    $deployParams += "--parameters"
-    $deployParams += "deployApim=true"
     $deployParams += "--parameters"
     $deployParams += "apimPublisherEmail=$ApimPublisherEmail"
     $deployParams += "--parameters"
     $deployParams += "apimPublisherName=$ApimPublisherName"
-}
-
-if ($DeployVNet) {
-    $deployParams += "--parameters"
-    $deployParams += "deployVNet=true"
 }
 
 az deployment group create @deployParams --output none
@@ -122,14 +121,35 @@ $searchEndpoint = $outputs.SEARCH_ENDPOINT.value
 $searchServiceName = $outputs.SEARCH_SERVICE_NAME.value
 $storageAccountName = $outputs.STORAGE_ACCOUNT_NAME.value
 $storageBlobEndpoint = $outputs.STORAGE_BLOB_ENDPOINT.value
-$openAiName = $outputs.AZURE_OPENAI_NAME.value
-$openAiEndpoint = $outputs.AZURE_OPENAI_ENDPOINT.value
+$aiFoundryName = $outputs.AI_FOUNDRY_NAME.value
+$aiFoundryEndpoint = $outputs.AI_FOUNDRY_ENDPOINT.value
 $mcpServerInternalUri = $outputs.MCP_SERVER_INTERNAL_URI.value
 $mcpPublicEndpoint = $outputs.MCP_PUBLIC_ENDPOINT.value
-$generatedApiKey = $outputs.MCP_SERVER_API_KEY.value
 $managedIdentityName = $outputs.MANAGED_IDENTITY_NAME.value
+$managedIdentityId = $outputs.MANAGED_IDENTITY_ID.value
+$containerAppName = $outputs.CONTAINER_APP_NAME.value
 $apimGatewayUrl = if ($outputs.APIM_GATEWAY_URL) { $outputs.APIM_GATEWAY_URL.value } else { "" }
 $apimName = if ($outputs.APIM_NAME) { $outputs.APIM_NAME.value } else { "" }
+
+# Retrieve secrets at runtime (not from deployment outputs — security best practice)
+$generatedApiKey = az containerapp secret show `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --secret-name server-api-key `
+    --query value -o tsv 2>$null
+if (-not $generatedApiKey) { $generatedApiKey = '' }
+
+$apimSubscriptionKey = ''
+if ($apimName) {
+    $apimId = az apim show --name $apimName --resource-group $ResourceGroupName --query id -o tsv 2>$null
+    if ($apimId) {
+        $apimSubscriptionKey = az rest --method POST `
+            --url "$apimId/subscriptions/mcp-subscription/listSecrets?api-version=2023-05-01-preview" `
+            --resource https://management.azure.com/ `
+            --query primaryKey -o tsv 2>$null
+        if (-not $apimSubscriptionKey) { $apimSubscriptionKey = '' }
+    }
+}
 
 # Build and push container image
 Write-Host "`nBuilding Docker image..." -ForegroundColor Yellow
@@ -147,16 +167,47 @@ Write-Host "✅ Docker image built" -ForegroundColor Green
 Write-Host "`nPushing image to Azure Container Registry..." -ForegroundColor Yellow
 az acr login --name $acrName --output none
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ ACR login failed!" -ForegroundColor Red
-    exit 1
-}
-
-docker push $fullImageName --quiet
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Docker push failed!" -ForegroundColor Red
-    exit 1
+    Write-Host "⚠️  Local Docker push unavailable, using cloud build (az acr build)..." -ForegroundColor Yellow
+    az acr build --registry $acrName --image "${imageName}:latest" . --no-logs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ ACR cloud build failed!" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    docker push $fullImageName --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ Docker push failed!" -ForegroundColor Red
+        exit 1
+    }
 }
 Write-Host "✅ Container image pushed successfully" -ForegroundColor Green
+
+# Ensure the container app's ACR registry uses the managed identity
+Write-Host "`nEnsuring ACR registry uses managed identity..." -ForegroundColor Yellow
+az containerapp registry set `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --server $acrLoginServer `
+    --identity $managedIdentityId `
+    --output none
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "⚠️  Failed to set registry identity (may already be configured)" -ForegroundColor Yellow
+}
+Write-Host "✅ ACR registry identity configured" -ForegroundColor Green
+
+# Update the container app to use the real ACR image
+# (Bicep deploys with a placeholder image to avoid MANIFEST_UNKNOWN on first deploy)
+Write-Host "`nUpdating container app with the real image..." -ForegroundColor Yellow
+az containerapp update `
+    --name $containerAppName `
+    --resource-group $ResourceGroupName `
+    --image $fullImageName `
+    --output none
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ Failed to update container app image!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "✅ Container app updated with image: $fullImageName" -ForegroundColor Green
 
 # Display deployment summary
 Write-Host ""
@@ -195,14 +246,14 @@ Write-Host "  Name:            $storageAccountName" -ForegroundColor White
 Write-Host "  Blob Endpoint:   $storageBlobEndpoint" -ForegroundColor White
 Write-Host "  Containers:      pdfs, documents" -ForegroundColor White
 Write-Host ""
-Write-Host "🤖 Azure OpenAI" -ForegroundColor Cyan
-Write-Host "  Name:            $openAiName" -ForegroundColor White
-Write-Host "  Endpoint:        $openAiEndpoint" -ForegroundColor White
-Write-Host "  Deployments:     embeddings (text-embedding-ada-002), chat (gpt-4o)" -ForegroundColor White
+Write-Host "🤖 Azure AI Foundry" -ForegroundColor Cyan
+Write-Host "  Name:            $aiFoundryName" -ForegroundColor White
+Write-Host "  Endpoint:        $aiFoundryEndpoint" -ForegroundColor White
+Write-Host "  Deployments:     embeddings (text-embedding-3-large), chat (gpt-4o)" -ForegroundColor White
 Write-Host ""
 Write-Host "🔐 Identity & Access" -ForegroundColor Cyan
 Write-Host "  Managed Identity: $managedIdentityName" -ForegroundColor White
-Write-Host "  Role Assignments: Search Contributor, Storage Blob Contributor, OpenAI User, ACR Pull" -ForegroundColor White
+Write-Host "  Role Assignments: Search Contributor, Storage Blob Contributor, AI Foundry User, ACR Pull" -ForegroundColor White
 Write-Host ""
 Write-Host "📝 Next Steps" -ForegroundColor Cyan
 Write-Host "=============" -ForegroundColor Cyan
@@ -233,5 +284,5 @@ Write-Host ""
 Write-Host "4. Configure your MCP client (GitHub Copilot):" -ForegroundColor White
 Write-Host "   Update mcp.json with:" -ForegroundColor White
 Write-Host "   URL: $mcpServerUri/api/tools" -ForegroundColor Gray
-Write-Host "   API Key: ********(hidden - retrieve from Azure Portal or azd env get-values)" -ForegroundColor Gray
+Write-Host "   API Key: ********(hidden - retrieve via 'az containerapp secret show')" -ForegroundColor Gray
 Write-Host ""

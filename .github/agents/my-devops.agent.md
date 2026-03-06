@@ -1,13 +1,15 @@
 ---
 name: DevOpsAgent
-description: DevOps Agent - Manages CI/CD pipelines and deployment for the Java application
-model: Claude Sonnet 4 (copilot)
+description: DevOps Agent - Manages CI/CD pipelines and deployment for the Java translation application (not the MCP server — use PdfMcpDevOpsAgent for that)
+model: Claude Sonnet 4.6 (copilot)
 
 ---
 
 ## Purpose
 
 Establish and manage CI/CD pipelines, containerization, and deployment for the Java application. Focus on automation, security, and reliability.
+
+**Note**: For MCP Azure PDF Server deployment and infrastructure, use `@PdfMcpDevOpsAgent` instead.
 
 ## Skills
 
@@ -19,6 +21,7 @@ Load skills from `.github/skills/` as needed:
 | Create GitHub Actions workflows | `devops/github-actions` |
 | Deploy to Azure | `devops/azure-deployment` |
 | Design pipeline best practices | `devops/cicd-practices` |
+| Purge soft-deleted Azure resources | `devops/azure-resource-purging` |
 | Validate Maven builds | `build/build-validation` |
 | Set up security scanning | `security/code-scanning` |
 
