@@ -50,6 +50,12 @@ param apimPublisherName string = 'Contoso'
 @description('Deploy Virtual Network for private networking (recommended for internal-only Container App)')
 param deployVNet bool = true
 
+@description('Allow developer IP access to private resources (e.g. AI Search) for local development — false by default')
+param allowDeveloperAccess bool = false
+
+@description('Developer IP address to allow through firewalls when allowDeveloperAccess is true (auto-detected by deploy.sh)')
+param developerIpAddress string = ''
+
 @description('Blob container names to create in storage account')
 param blobContainers array = [
   {
@@ -91,6 +97,19 @@ module searchService 'core/search/search-services.bicep' = {
     }
     semanticSearch: 'free'
     disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
+    // When developer access is enabled, allow the developer IP through the firewall alongside the private endpoint
+    publicNetworkAccess: (deployVNet && !allowDeveloperAccess) ? 'disabled' : 'enabled'
+    networkRuleSet: allowDeveloperAccess && !empty(developerIpAddress) ? {
+      bypass: 'None'
+      ipRules: [
+        {
+          value: developerIpAddress
+        }
+      ]
+    } : {
+      bypass: 'None'
+      ipRules: []
+    }
   }
 }
 
@@ -269,6 +288,10 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
         name: 'private-endpoints'
         addressPrefix: '10.0.3.0/24'
       }
+      {
+        name: 'sn-private-endpoint-ai-search'
+        addressPrefix: '10.0.4.0/24'
+      }
     ]
   }
 }
@@ -419,6 +442,40 @@ module apim 'core/gateway/apim.bicep' = if (deployApim) {
     apiKey: generatedApiKey
     virtualNetworkType: deployVNet ? 'External' : 'None'
     subnetResourceId: deployVNet ? vnet!.outputs.subnets[1].id : ''
+  }
+}
+
+// Private DNS zone for Azure AI Search
+resource searchPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (deployVNet) {
+  name: 'privatelink.search.windows.net'
+  location: 'global'
+  tags: tags
+}
+
+resource searchPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (deployVNet) {
+  parent: searchPrivateDnsZone
+  name: 'search-vnet-link-${resourceToken}'
+  location: 'global'
+  tags: tags
+  properties: {
+    virtualNetwork: {
+      id: vnet!.outputs.id
+    }
+    registrationEnabled: false
+  }
+}
+
+// Private endpoint for Azure AI Search — placed in dedicated search-pe subnet
+module searchPrivateEndpoint 'core/network/private-endpoint.bicep' = if (deployVNet) {
+  name: 'search-private-endpoint'
+  params: {
+    name: '${abbrs.networkPrivateEndpoints}srch-${resourceToken}'
+    location: location
+    tags: tags
+    serviceId: searchService.outputs.id
+    groupId: 'searchService'
+    subnetId: vnet!.outputs.subnets[3].id  // search-pe subnet
+    privateDnsZoneId: searchPrivateDnsZone.id
   }
 }
 

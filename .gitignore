@@ -69,3 +69,6 @@ translation/
 
 # PL/I source code (proprietary, not committed)
 pli_src/
+
+# Java implementation (generated, not committed)
+java-implementation/

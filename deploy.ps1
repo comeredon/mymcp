@@ -10,7 +10,8 @@ param(
     [bool]$DeployApim = $true,
     [string]$ApimPublisherEmail = "admin@contoso.com",
     [string]$ApimPublisherName = "Contoso",
-    [bool]$DeployVNet = $true
+    [bool]$DeployVNet = $true,
+    [switch]$DevAccess
 )
 
 Write-Host "🚀 MCP Azure PDF Server - Unified Deployment" -ForegroundColor Cyan
@@ -91,6 +92,21 @@ $deployParams += "--parameters"
 $deployParams += "deployApim=$($DeployApim.ToString().ToLower())"
 $deployParams += "--parameters"
 $deployParams += "deployVNet=$($DeployVNet.ToString().ToLower())"
+
+# Developer access: detect IP and pass to Bicep
+$allowDevAccess = if ($DevAccess) { "true" } else { "false" }
+$deployParams += "--parameters"
+$deployParams += "allowDeveloperAccess=$allowDevAccess"
+if ($DevAccess) {
+    try {
+        $devIp = (Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 5)
+        Write-Host "  Developer IP detected: $devIp" -ForegroundColor Yellow
+        $deployParams += "--parameters"
+        $deployParams += "developerIpAddress=$devIp"
+    } catch {
+        Write-Host "  ⚠️ Could not detect developer IP — skipping IP allowlist" -ForegroundColor Yellow
+    }
+}
 
 if ($DeployApim) {
     $deployParams += "--parameters"
