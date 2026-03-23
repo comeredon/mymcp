@@ -5,6 +5,8 @@ description: Fixed-length record parsing patterns for mainframe-style data files
 
 # Fixed-Length Record Parsing
 
+> **Related skills:** `development/type-mapping`, `development/data-generation`
+
 ## Rule: Document byte layout BEFORE writing code
 
 ```

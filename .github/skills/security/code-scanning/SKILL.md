@@ -5,6 +5,8 @@ description: Security scanning patterns and vulnerability assessment for Java ap
 
 # Code Security Scanning
 
+> **Related skills:** `devops/docker`, `devops/cicd-practices`
+
 ## OWASP Top 10 Checklist for Java
 
 1. **Injection** — Use parameterized queries, validate all input

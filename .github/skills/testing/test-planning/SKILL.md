@@ -5,6 +5,8 @@ description: Strategic guide for planning comprehensive test coverage. Use when 
 
 # Test Planning Strategy
 
+> **Related skills:** `testing/unit-testing`, `testing/integration-testing`, `testing/test-data`, `development/frontmatter-navigation`
+
 ## Test Scenario Matrix
 
 | Type | Description | Example |

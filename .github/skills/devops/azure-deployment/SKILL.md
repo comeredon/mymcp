@@ -5,6 +5,8 @@ description: Azure deployment strategies for Java applications including blue-gr
 
 # Azure Deployment Strategies
 
+> **Related skills:** `devops/github-actions`, `devops/docker`, `devops/cicd-practices`
+
 ## Basic Deployment
 
 ```bash

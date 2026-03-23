@@ -5,6 +5,8 @@ description: Build and validation workflow for Java Maven projects. Use before c
 
 # Build Validation Workflow
 
+> **Related skills:** `development/code-checklist`, `testing/test-execution`
+
 ## Complete Validation Sequence
 
 ```bash

@@ -5,6 +5,8 @@ description: Integration testing patterns for validating component interactions 
 
 # Integration Testing Patterns
 
+> **Related skills:** `testing/unit-testing`, `testing/test-data`, `testing/test-execution`
+
 ## File I/O Tests with @TempDir
 
 ```java

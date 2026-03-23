@@ -5,6 +5,8 @@ description: Step-by-step orchestration guide for PL/I to Java 21 translation. U
 
 # PL/I to Java Implementation Workflow
 
+> **Related skills:** `development/type-mapping`, `development/java-patterns`, `development/code-checklist`, `build/build-validation`
+
 ## Prerequisites
 
 - All documentation exists in `translation/` folder (overview, structure, logic, io, error-handling, dependencies, special-considerations)
@@ -17,7 +19,7 @@ description: Step-by-step orchestration guide for PL/I to Java 21 translation. U
 2. List all data model classes needed
 3. Map PL/I types to Java (use `type-mapping` skill)
 4. Document byte layouts (use `record-parsing` skill)
-5. Ask Program Manager about ANY unclear specifications
+5. Ask Analyst Agent about ANY unclear specifications
 
 ## Phase 1: Model Classes
 

@@ -5,6 +5,8 @@ description: Patterns for generating fixed-length test data files. Use BEFORE wr
 
 # Data Generation for Fixed-Length Records
 
+> **Related skills:** `development/record-parsing`, `testing/test-data`
+
 ## Rule: Generate data BEFORE writing parsers
 
 This prevents format mismatches between generator and parser.

@@ -5,6 +5,8 @@ description: GitHub Actions workflow patterns for Java CI/CD pipelines. Use when
 
 # GitHub Actions for Java
 
+> **Related skills:** `devops/docker`, `devops/cicd-practices`, `devops/azure-deployment`
+
 ## Java CI Pipeline
 
 ```yaml

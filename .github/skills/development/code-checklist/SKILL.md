@@ -5,6 +5,8 @@ description: Critical code requirements checklist derived from actual build fail
 
 # Code Requirements Checklist
 
+> **Related skills:** `build/build-validation`, `development/java-patterns`
+
 ## Exceptions and Constructors
 
 - **NEVER** throw checked exceptions from constructors calling `super()` — use factory methods or composition

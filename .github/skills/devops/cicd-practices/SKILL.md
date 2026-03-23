@@ -5,6 +5,8 @@ description: General CI/CD best practices for pipeline design, quality gates, an
 
 # CI/CD Best Practices
 
+> **Related skills:** `devops/github-actions`, `devops/docker`, `security/code-scanning`
+
 ## Pipeline Stages (Recommended Order)
 
 1. Lint/formatting (seconds)

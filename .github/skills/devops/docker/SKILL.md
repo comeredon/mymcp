@@ -5,6 +5,8 @@ description: Docker containerization best practices for Java 21 applications. Us
 
 # Docker Containerization for Java
 
+> **Related skills:** `security/code-scanning`, `devops/cicd-practices`, `devops/github-actions`
+
 ## Multi-Stage Build (Recommended)
 
 ```dockerfile

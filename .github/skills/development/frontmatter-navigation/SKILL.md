@@ -1,9 +1,11 @@
 ---
 name: frontmatter-navigation
-description: Navigate PL/I translation documentation using YAML frontmatter metadata for efficient code implementation
+description: Navigate PL/I translation documentation using YAML frontmatter metadata for efficient code implementation.
 ---
 
 # Frontmatter Navigation for Translation Documentation
+
+> **Related skills:** `orchestration/analysis-spec`, `development/implementation-workflow`
 
 ## How to Use
 
@@ -53,12 +55,11 @@ When translating a specific PL/I file, filter docs by `source_files`:
 ### Example Workflow
 
 1. Read `translation/INDEX.md` for the full map
-2. For implementing `CustomerRecord.java`:
-   - Read `record-formats.md` (category: data-structures, has byte offsets)
-   - Read `variables-psam1.md` (category: data-structures, has field declarations)
-   - Check `data-types.md` for PL/I-to-Java type mapping
-   - Check `input-formats.md` for file format details
+2. For implementing a data model class:
+   - Filter INDEX.md for category `data-structures` with priority 1-2
+   - Read all matching docs (byte offsets, field declarations, type mappings)
+   - Follow `related_docs` links from frontmatter for cross-references
 3. For implementing business logic:
-   - Read `logic-psam1.md` for the algorithm
-   - Check `control-flow.md` for loop/branch patterns
-   - Check `error-handling.md` for error conditions
+   - Filter INDEX.md for category `business-logic`
+   - Read all matching docs in priority order
+   - Check `related_docs` for error handling and control flow docs

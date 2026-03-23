@@ -5,6 +5,8 @@ description: Guide for running tests, analyzing results, and measuring code cove
 
 # Test Execution and Validation
 
+> **Related skills:** `testing/test-planning`, `build/build-validation`
+
 ## Maven Commands
 
 ```bash

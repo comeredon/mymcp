@@ -5,6 +5,8 @@ description: JUnit 5 unit testing patterns and setup for Java 21. Use when writi
 
 # JUnit 5 Unit Testing
 
+> **Related skills:** `testing/test-data`, `testing/mocking`, `testing/test-execution`
+
 ## Maven Setup
 
 ```xml
