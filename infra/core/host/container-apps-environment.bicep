@@ -6,6 +6,9 @@ param tags object = {}
 
 param logAnalyticsWorkspaceName string = ''
 
+@description('Resource ID of the VNet subnet to integrate with. Leave empty for no VNet integration.')
+param infrastructureSubnetId string = ''
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = if (!empty(logAnalyticsWorkspaceName)) {
   name: logAnalyticsWorkspaceName
 }
@@ -22,9 +25,20 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01'
         sharedKey: logAnalyticsWorkspace!.listKeys().primarySharedKey
       }
     } : null
+    vnetConfiguration: !empty(infrastructureSubnetId) ? {
+      infrastructureSubnetId: infrastructureSubnetId
+      internal: true
+    } : null
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
 output name string = containerAppsEnvironment.name
 output id string = containerAppsEnvironment.id
 output domain string = containerAppsEnvironment.properties.defaultDomain
+output staticIp string = containerAppsEnvironment.properties.staticIp

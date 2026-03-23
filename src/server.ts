@@ -16,8 +16,10 @@ interface SearchDocument {
   content_text?: string;
   content_path?: string;
   location_metadata?: {
-    page_number?: number;
-    bounding_polygons?: string;
+    pageNumberFrom?: number;
+    pageNumberTo?: number;
+    ordinalPosition?: number;
+    source?: string;
   };
   // Vector field: not retrievable in results but required for vector search query field targeting
   content_embedding?: number[];
@@ -37,6 +39,274 @@ const searchClient = new SearchClient<SearchDocument>(
   SEARCH_INDEX,
   new DefaultAzureCredential()
 );
+
+// Build an OData page filter clause that matches chunks covering any of the requested pages.
+// A chunk covers page P when pageNumberFrom <= P AND pageNumberTo >= P.
+function buildPageFilter(pages?: number[]): string {
+  if (!pages || pages.length === 0) return '';
+  return pages.map(p =>
+    `(location_metadata/pageNumberFrom le ${p} and location_metadata/pageNumberTo ge ${p})`
+  ).join(' or ');
+}
+
+// Combine a base filter with an optional page filter using AND
+function combineFilters(base: string, pageFilter: string): string {
+  if (!pageFilter) return base;
+  return `(${base}) and (${pageFilter})`;
+}
+
+// Fetch all matching documents, ordered by page and ordinal position.
+// Azure AI Search caps $top at 1000 (platform limit). Documents with more
+// than 1000 chunks would require skip-based pagination — not implemented
+// yet since current documents are well below that threshold (pg.pdf = 810).
+async function fetchAllDocuments(filter: string, maxResults?: number): Promise<SearchDocument[]> {
+  const docs: SearchDocument[] = [];
+  const results = await searchClient.search("*", {
+    filter,
+    top: maxResults ?? 1000,
+    orderBy: ["location_metadata/pageNumberFrom asc", "location_metadata/ordinalPosition asc"],
+    select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
+  });
+  for await (const r of results.results) {
+    docs.push(r.document as SearchDocument);
+  }
+  return docs;
+}
+
+// ---- Shared result types ----
+interface SearchResultItem {
+  id: string;
+  title: string;
+  text: string;
+  documentId: string | null;
+  type: string;
+  imagePath: string | null;
+  pageNumber: number | null;
+  score?: number;
+}
+
+interface ChunkDetail {
+  id: string;
+  text: string;
+  type: 'text' | 'image';
+  pageFrom: number | null;
+  pageTo: number | null;
+  ordinal: number | null;
+}
+
+interface ImageDetail {
+  id: string;
+  description: string;
+  pageFrom: number | null;
+  pageTo: number | null;
+  ordinal: number | null;
+}
+
+interface FetchResult {
+  text: string;
+  images: ImageDetail[];
+  textChunks: number;
+  imageChunks: number;
+  chunkDetails: ChunkDetail[];
+}
+
+// Core search implementation — single source of truth for search logic.
+async function performSearch(query: string, top: number = 5): Promise<SearchResultItem[]> {
+  const sanitizedTop = Math.min(Math.max(Number(top) || 5, 1), 20);
+  // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
+  const knn = Math.min(Math.max(sanitizedTop * 3, 50), 150);
+
+  const results = await searchClient.search(query, {
+    top: sanitizedTop,
+    includeTotalCount: true,
+    queryType: "semantic",
+    semanticSearchOptions: { configurationName: "semantic-config" },
+    vectorSearchOptions: {
+      queries: [{ kind: "text", text: query, kNearestNeighborsCount: knn, fields: ["content_embedding"] }]
+    },
+    select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
+  });
+
+  const items: SearchResultItem[] = [];
+  for await (const r of results.results) {
+    const doc = r.document as SearchDocument;
+    items.push({
+      id: doc.content_id,
+      title: doc.document_title ?? doc.content_id,
+      text: doc.content_text ?? "",
+      documentId: doc.text_document_id ?? null,
+      type: doc.image_document_id ? "image" : "text",
+      imagePath: doc.content_path ?? null,
+      pageNumber: doc.location_metadata?.pageNumberFrom ?? null,
+      score: r.score
+    });
+  }
+  return items;
+}
+
+// Core fetch implementation — single source of truth for fetch logic.
+// When no pages are specified the full document is returned (all chunks, server-ordered).
+async function performFetch(id: string, pages?: number[]): Promise<FetchResult> {
+  const pageFilter = buildPageFilter(pages);
+  let chunks: SearchDocument[] = [];
+  for (const baseFilter of [
+    `text_document_id eq '${id}'`,
+    `document_title eq '${id}'`
+  ]) {
+    chunks = await fetchAllDocuments(combineFilters(baseFilter, pageFilter));
+    if (chunks.length > 0) break;
+  }
+
+  // Results are already ordered by pageNumberFrom, ordinalPosition via
+  // the orderBy clause in fetchAllDocuments — no client-side sort needed.
+
+  // Classify each chunk as text or image based on content pattern
+  const details: ChunkDetail[] = chunks.map(c => {
+    const content = c.content_text ?? "";
+    const chunkType: 'text' | 'image' = content.startsWith('The image') ? 'image' : 'text';
+    return {
+      id: c.content_id,
+      text: content,
+      type: chunkType,
+      pageFrom: c.location_metadata?.pageNumberFrom ?? null,
+      pageTo: c.location_metadata?.pageNumberTo ?? null,
+      ordinal: c.location_metadata?.ordinalPosition ?? null
+    };
+  });
+
+  // Separate text and image chunks
+  const textDetails = details.filter(d => d.type === 'text');
+  const imageDetails = details.filter(d => d.type === 'image');
+
+  // Deduplicate the 200-char overlap produced by Content Understanding's
+  // chunkingProperties (maximumLength: 2000, overlapLength: 200).
+  // Each type is now processed independently since they're separated.
+  function deduplicateChunks(chunks: ChunkDetail[]): string[] {
+    const parts: string[] = [];
+    let prevText = '';
+    for (const chunk of chunks) {
+      let text = chunk.text;
+      if (prevText && text.length > 0) {
+        // Find the longest suffix of prevText that is a prefix of text (up to 300 chars)
+        const maxCheck = Math.min(300, prevText.length, text.length);
+        let overlapLen = 0;
+        for (let size = maxCheck; size > 0; size--) {
+          if (prevText.endsWith(text.substring(0, size))) {
+            overlapLen = size;
+            break;
+          }
+        }
+        if (overlapLen > 0) {
+          text = text.substring(overlapLen);
+        }
+      }
+      prevText = chunk.text; // store original for next comparison
+      parts.push(text);
+    }
+    return parts;
+  }
+
+  const dedupedText = deduplicateChunks(textDetails).join("\n\n");
+
+  // Build image details — no dedup needed for images (descriptions are unique per figure)
+  const images: ImageDetail[] = imageDetails.map(d => ({
+    id: d.id,
+    description: d.text,
+    pageFrom: d.pageFrom,
+    pageTo: d.pageTo,
+    ordinal: d.ordinal
+  }));
+
+  return {
+    text: dedupedText,
+    images,
+    textChunks: textDetails.length,
+    imageChunks: imageDetails.length,
+    chunkDetails: details
+  };
+}
+
+// Format a page label from chunk page range
+function pageLabel(pageFrom: number | null, pageTo: number | null): string {
+  if (pageFrom == null) return 'Unknown page';
+  if (pageTo == null || pageTo === pageFrom) return `Page ${pageFrom}`;
+  return `Pages ${pageFrom}–${pageTo}`;
+}
+
+// Format fetch results as structured markdown text for MCP tool consumers.
+function formatFetchAsText(id: string, result: FetchResult, pages?: number[]): string {
+  const totalChunks = result.textChunks + result.imageChunks;
+  if (totalChunks === 0) {
+    return `No content found for document "${id}"` +
+      (pages && pages.length > 0 ? ` (requested pages: ${pages.join(', ')})` : '') + '.';
+  }
+
+  const pageNums = result.chunkDetails
+    .map(d => d.pageFrom)
+    .filter((p): p is number => p != null);
+  const minPage = pageNums.length > 0 ? Math.min(...pageNums) : null;
+  const maxPageTo = result.chunkDetails
+    .map(d => d.pageTo ?? d.pageFrom)
+    .filter((p): p is number => p != null);
+  const maxPage = maxPageTo.length > 0 ? Math.max(...maxPageTo) : null;
+
+  let header = `# ${id}\n`;
+  header += `${result.textChunks} text chunks, ${result.imageChunks} image chunks`;
+  if (minPage != null && maxPage != null) {
+    header += `, covering pages ${minPage}–${maxPage}`;
+  }
+  if (pages && pages.length > 0) {
+    header += ` (filtered to pages: ${pages.join(', ')})`;
+  }
+  header += '\n';
+
+  // Text content section — deduplicated continuous text with page headers
+  const textChunks = result.chunkDetails.filter(d => d.type === 'text');
+  let textSection = '';
+  if (textChunks.length > 0) {
+    const textBody = textChunks.map(d => {
+      const label = pageLabel(d.pageFrom, d.pageTo);
+      return `### ${label}\n\n${d.text}`;
+    }).join('\n\n');
+    textSection = `## Text Content\n\n${textBody}`;
+  }
+
+  // Images section — figure descriptions with page references
+  let imageSection = '';
+  if (result.images.length > 0) {
+    const imageBody = result.images.map(img => {
+      const label = pageLabel(img.pageFrom, img.pageTo);
+      return `- **${label}**: ${img.description}`;
+    }).join('\n');
+    imageSection = `## Images\n\n${imageBody}`;
+  }
+
+  const sections = [header, textSection, imageSection].filter(s => s.length > 0);
+  return sections.join('\n\n');
+}
+
+// Format search results as structured markdown text for MCP tool consumers.
+function formatSearchAsText(query: string, items: SearchResultItem[]): string {
+  if (items.length === 0) {
+    return `No results found for "${query}".`;
+  }
+
+  const header = `Found ${items.length} results for "${query}":\n`;
+  const body = items.map((item, i) => {
+    const meta = [
+      `page: ${item.pageNumber ?? 'N/A'}`,
+      `score: ${item.score?.toFixed(4) ?? 'N/A'}`,
+      `type: ${item.type}`,
+      `documentId: ${item.documentId ?? 'N/A'}`
+    ].join(', ');
+    const snippet = item.text.length > 1500
+      ? item.text.substring(0, 1500) + '...'
+      : item.text;
+    return `${i + 1}. **${item.title}** (${meta})\n${snippet}`;
+  }).join('\n\n');
+
+  return `${header}\n${body}`;
+}
 
 // ---- Express App Setup ----
 const app = express();
@@ -111,35 +381,7 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
       return res.status(400).json({ error: 'Query must be 1000 characters or fewer' });
     }
 
-    const sanitizedTop = Math.min(Math.max(Number(top) || 5, 1), 20);
-    // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
-    const knn = Math.min(Math.max(sanitizedTop * 3, 50), 150);
-
-    const results = await searchClient.search(query, {
-      top: sanitizedTop,
-      includeTotalCount: false,
-      queryType: "semantic",
-      semanticSearchOptions: { configurationName: "semantic-config" },
-      vectorSearchOptions: {
-        queries: [{ kind: "text", text: query, kNearestNeighborsCount: knn, fields: ["content_embedding"] }]
-      },
-      select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-    });
-
-    const items: any[] = [];
-    for await (const r of results.results) {
-      const doc = r.document as SearchDocument;
-      items.push({
-        id: doc.content_id,
-        title: doc.document_title ?? doc.content_id,
-        text: doc.content_text ?? "",
-        type: doc.image_document_id ? "image" : "text",
-        imagePath: doc.content_path ?? null,
-        pageNumber: doc.location_metadata?.page_number ?? null,
-        score: r.score
-      });
-    }
-    
+    const items = await performSearch(query, top);
     res.json({ results: items });
   } catch (error) {
     console.error('Search error:', error);
@@ -147,7 +389,7 @@ app.post('/api/search', authenticateApiKey, async (req: Request, res: Response) 
   }
 });
 
-// Fetch endpoint - return full text (or aggregate chunks) by doc id
+// Fetch endpoint - return full text (or aggregate chunks) by document title (e.g. 'mg.pdf') or text_document_id
 app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) => {
   try {
     const { id, pages }: { id: string; pages?: number[] } = req.body;
@@ -156,32 +398,12 @@ app.post('/api/fetch', authenticateApiKey, async (req: Request, res: Response) =
       return res.status(400).json({ error: 'ID parameter is required and must be a string' });
     }
 
-    // Validate id format - only allow alphanumeric, hyphens, underscores, dots
     if (!/^[\w.\-]+$/.test(id)) {
       return res.status(400).json({ error: 'Invalid document ID format' });
     }
 
-    // Fetch all text chunks for the document by text_document_id
-    const filter = `text_document_id eq '${id}'`;
-    const results = await searchClient.search("*", {
-      filter,
-      top: 500,
-      // Exclude embedding vectors - not needed and very large (3072 floats)
-      select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-    });
-
-    const chunks: SearchDocument[] = [];
-    for await (const r of results.results) {
-      chunks.push(r.document as SearchDocument);
-    }
-
-    let text = chunks
-      .filter(c => !pages || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
-      .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
-      .map(c => c.content_text ?? "")
-      .join("\n\n");
-
-    res.json({ text, chunks: chunks.length });
+    const result = await performFetch(id, pages);
+    res.json({ id, ...result, pages });
   } catch (error) {
     console.error('Fetch error:', error);
     res.status(500).json({ error: 'Fetch failed' });
@@ -262,13 +484,13 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             },
             {
               name: "fetch",
-              description: "Retrieve full document content or specific pages",
+              description: "Retrieve full document content or specific pages by document title (e.g. 'mg.pdf') or documentId from search results",
               inputSchema: {
                 type: "object",
                 properties: {
                   id: {
                     type: "string",
-                    description: "The document ID to fetch"
+                    description: "The document title (e.g. 'mg.pdf') or documentId returned by the search tool"
                   },
                   pages: {
                     type: "array",
@@ -303,7 +525,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
       }
 
       switch (toolName.toLowerCase()) {
-        case 'search':
+        case 'search': {
           const query = args.query || '';
           const top = args.top || 5;
           
@@ -318,33 +540,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             });
           }
 
-          const sanitizedTopMcp = Math.min(Math.max(Number(top) || 5, 1), 20);
-          // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
-          const knn = Math.min(Math.max(sanitizedTopMcp * 3, 50), 150);
-          const searchResults = await searchClient.search(query, {
-            top: sanitizedTopMcp,
-            includeTotalCount: true,
-            queryType: "semantic",
-            semanticSearchOptions: { configurationName: "semantic-config" },
-            vectorSearchOptions: {
-              queries: [{ kind: "text", text: query, kNearestNeighborsCount: knn, fields: ["content_embedding"] }]
-            },
-            select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-          });
-          
-          const searchItems: any[] = [];
-          for await (const r of searchResults.results) {
-            const doc = r.document as SearchDocument;
-            searchItems.push({
-              id: doc.content_id,
-              title: doc.document_title ?? doc.content_id,
-              text: doc.content_text ?? "",
-              type: doc.image_document_id ? "image" : "text",
-              imagePath: doc.content_path ?? null,
-              pageNumber: doc.location_metadata?.page_number ?? null,
-              score: r.score
-            });
-          }
+          const searchItems = await performSearch(query, top);
 
           return res.json({
             jsonrpc: "2.0",
@@ -353,16 +549,14 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
               content: [
                 {
                   type: "text",
-                  text: `Found ${searchItems.length} results for "${query}":\n\n` +
-                        searchItems.map((item, index) => 
-                          `${index + 1}. ${item.title}\n${item.text.substring(0, 1500)}${item.text.length > 1500 ? '...' : ''}\n`
-                        ).join('\n')
+                  text: formatSearchAsText(query, searchItems)
                 }
               ]
             }
           });
+        }
           
-        case 'fetch':
+        case 'fetch': {
           const docId = args.id || '';
           const pages = args.pages || [];
 
@@ -388,24 +582,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
             });
           }
 
-          const filter = `text_document_id eq '${docId}'`;
-          const fetchResults = await searchClient.search("*", {
-            filter,
-            top: 500,
-            // Exclude embedding vectors - not needed and very large (3072 floats)
-            select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-          });
-
-          const fetchChunks: SearchDocument[] = [];
-          for await (const r of fetchResults.results) {
-            fetchChunks.push(r.document as SearchDocument);
-          }
-
-          let text = fetchChunks
-            .filter(c => !pages.length || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
-            .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
-            .map(c => c.content_text ?? "")
-            .join("\n\n");
+          const fetchResult = await performFetch(docId, pages);
 
           return res.json({
             jsonrpc: "2.0",
@@ -414,11 +591,12 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
               content: [
                 {
                   type: "text",
-                  text: text || "No content found for the specified document ID."
+                  text: formatFetchAsText(docId, fetchResult, pages)
                 }
               ]
             }
           });
+        }
           
         default:
           return res.status(400).json({
@@ -459,7 +637,7 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
 
     // Handle legacy format requests
     switch (tool.toLowerCase()) {
-      case 'search':
+      case 'search': {
         const query = args.query || args.q || '';
         const top = args.top || args.count || 5;
         
@@ -467,41 +645,16 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
           return res.status(400).json({ error: 'Search query is required' });
         }
 
-        const sanitizedTopLegacy = Math.min(Math.max(Number(top) || 5, 1), 20);
-        // kNearestNeighborsCount floored at 50 for better hybrid search recall (MS recommendation)
-        const knnLegacy = Math.min(Math.max(sanitizedTopLegacy * 3, 50), 150);
-        const searchResults = await searchClient.search(query, {
-          top: sanitizedTopLegacy,
-          includeTotalCount: true,
-          queryType: "semantic",
-          semanticSearchOptions: { configurationName: "semantic-config" },
-          vectorSearchOptions: {
-            queries: [{ kind: "text", text: query, kNearestNeighborsCount: knnLegacy, fields: ["content_embedding"] }]
-          },
-          select: ["content_id", "text_document_id", "image_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-        });
-        
-        const searchItems: any[] = [];
-        for await (const r of searchResults.results) {
-          const doc = r.document as SearchDocument;
-          searchItems.push({
-            id: doc.content_id,
-            title: doc.document_title ?? doc.content_id,
-            text: doc.content_text ?? "",
-            type: doc.image_document_id ? "image" : "text",
-            imagePath: doc.content_path ?? null,
-            pageNumber: doc.location_metadata?.page_number ?? null,
-            score: r.score
-          });
-        }
+        const searchItems = await performSearch(query, top);
 
         return res.json({ 
           query: query,
           total: searchItems.length,
           results: searchItems 
         });
+      }
         
-      case 'fetch':
+      case 'fetch': {
         const docId = args.id || args.document_id || '';
         const pages = args.pages || [];
 
@@ -513,33 +666,10 @@ app.post('/api/tools', authenticateApiKey, async (req: Request, res: Response) =
           return res.status(400).json({ error: 'Invalid document ID format' });
         }
 
-        const filter = `text_document_id eq '${docId}'`;
-        const fetchResults = await searchClient.search("*", {
-          filter,
-          top: 500,
-          // Exclude embedding vectors - not needed and very large (3072 floats)
-          select: ["content_id", "text_document_id", "document_title", "content_text", "content_path", "location_metadata"]
-        });
+        const fetchResult = await performFetch(docId, pages);
 
-        const fetchChunks: SearchDocument[] = [];
-        for await (const r of fetchResults.results) {
-          fetchChunks.push(r.document as SearchDocument);
-        }
-
-        let text = fetchChunks
-          .filter(c => !pages.length || pages.includes(Number(c.location_metadata?.page_number ?? 0)))
-          .sort((a, b) => (a.location_metadata?.page_number ?? 0) - (b.location_metadata?.page_number ?? 0))
-          .map(c => c.content_text ?? "")
-          .join("\n\n");
-
-        const fetchResult = {
-          id: docId,
-          text: text,
-          chunks: fetchChunks.length,
-          pages: pages
-        };
-
-        return res.json(fetchResult);
+        return res.json({ id: docId, ...fetchResult, pages });
+      }
         
       default:
         return res.status(400).json({ 

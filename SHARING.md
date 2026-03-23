@@ -117,7 +117,7 @@ Recipients can customize these parameters:
 ### Advanced Configuration
 Edit `infra/main.bicep` for:
 - Container app resources (CPU/Memory)
-- OpenAI model deployments
+- AI Foundry model deployments
 - Search service SKU
 - Storage account settings
 - Network configuration
@@ -222,10 +222,10 @@ Recipients can:
 
 ## 📝 Customization Examples
 
-### Change OpenAI Models
+### Change AI Foundry Models
 Edit `infra/main.bicep`:
 ```bicep
-param openAiConfig object = {
+param aiFoundryConfig object = {
   deployEmbeddings: true
   embeddingsModel: 'text-embedding-3-large'  // Modern, 3072 dimensions
   embeddingsModelVersion: '1'

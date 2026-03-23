@@ -1,4 +1,4 @@
-metadata description = 'Creates an Azure Cognitive Services account (Azure OpenAI).'
+metadata description = 'Creates an Azure Cognitive Services account (Azure AI Foundry / AIServices).'
 
 param name string
 param location string = resourceGroup().location

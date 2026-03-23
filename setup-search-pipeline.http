@@ -11,14 +11,14 @@
 # All management calls use an Azure AD Bearer token obtained via:
 #   az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv
 #
-# API version 2025-11-01-preview is required for Document Layout skill,
+# API version 2025-11-01-preview is required for Content Understanding skill,
 # GenAI Prompt (ChatCompletion) skill, and AIServicesByIdentity (keyless skillset billing).
 # NOTE: AIServicesByIdentity is currently in public preview.
 
 @searchEndpoint    = https://<SEARCH_SERVICE_NAME>.search.windows.net
 @storageAccount    = <STORAGE_ACCOUNT_NAME>
 @storageContainer  = pdfs
-@openAiEndpoint    = https://<OPENAI_RESOURCE_NAME>.openai.azure.com
+@aiFoundryEndpoint = https://<AI_FOUNDRY_RESOURCE_NAME>.cognitiveservices.azure.com
 @aiServicesEndpoint= https://aifs-<RESOURCE_TOKEN>.services.ai.azure.com
 @adminToken        = <REPLACE_WITH: az account get-access-token --resource https://search.azure.com/ --query accessToken -o tsv>
 @apiVersion        = 2025-11-01-preview
@@ -61,8 +61,10 @@ Authorization: Bearer {{adminToken}}
       "name": "location_metadata",
       "type": "Edm.ComplexType",
       "fields": [
-        { "name": "page_number",       "type": "Edm.Int32",  "retrievable": true, "filterable": true },
-        { "name": "bounding_polygons", "type": "Edm.String", "retrievable": true }
+        { "name": "pageNumberFrom",     "type": "Edm.Int32",  "retrievable": true, "filterable": true },
+        { "name": "pageNumberTo",       "type": "Edm.Int32",  "retrievable": true, "filterable": true },
+        { "name": "ordinalPosition",    "type": "Edm.Int32",  "retrievable": true },
+        { "name": "source",             "type": "Edm.String", "retrievable": true }
       ]
     },
     {
@@ -76,17 +78,17 @@ Authorization: Bearer {{adminToken}}
   ],
   "vectorSearch": {
     "profiles": [
-      { "name": "hnsw-profile", "algorithm": "hnsw-config", "vectorizer": "openai-vectorizer" }
+      { "name": "hnsw-profile", "algorithm": "hnsw-config", "vectorizer": "ai-foundry-vectorizer" }
     ],
     "algorithms": [
       { "name": "hnsw-config", "kind": "hnsw", "hnswParameters": { "metric": "cosine" } }
     ],
     "vectorizers": [
       {
-        "name": "openai-vectorizer",
+        "name": "ai-foundry-vectorizer",
         "kind": "azureOpenAI",
         "azureOpenAIParameters": {
-          "resourceUri": "{{openAiEndpoint}}",
+          "resourceUri": "{{aiFoundryEndpoint}}",
           "deploymentId": "embeddings",
           "modelName": "text-embedding-3-large",
           "authIdentity": null
@@ -99,9 +101,9 @@ Authorization: Bearer {{adminToken}}
       {
         "name": "semantic-config",
         "prioritizedFields": {
-          "contentFields":    [{ "fieldName": "content_text" }],
+          "prioritizedContentFields":    [{ "fieldName": "content_text" }],
           "titleField":        { "fieldName": "document_title" },
-          "keywordsFields":   [{ "fieldName": "document_title" }]
+          "prioritizedKeywordsFields":   [{ "fieldName": "document_title" }]
         }
       }
     ]
@@ -109,7 +111,7 @@ Authorization: Bearer {{adminToken}}
 }
 
 ### ─────────────────────────────────────────────────────────────────────────
-### Step 3 — Skillset (Document Layout → GenAI Prompt → 2× Embedding)
+### Step 3 — Skillset (Content Understanding → GenAI Prompt → 2× Embedding)
 ### ─────────────────────────────────────────────────────────────────────────
 POST {{searchEndpoint}}/skillsets?api-version={{apiVersion}}
 Content-Type: application/json
@@ -117,7 +119,7 @@ Authorization: Bearer {{adminToken}}
 
 {
   "name": "pdf-skillset",
-  "description": "Extracts text sections and images from PDFs; verbalizes images with GPT-4o; embeds both.",
+  "description": "Content Understanding (extraction + chunking) + image verbalization + embeddings. Keyless billing via AIServicesByIdentity.",
   "cognitiveServices": {
     "@odata.type": "#Microsoft.Azure.Search.AIServicesByIdentity",
     "description": "Keyless billing via search service system-assigned managed identity (preview).",
@@ -139,11 +141,16 @@ Authorization: Bearer {{adminToken}}
   },
   "skills": [
     {
-      "@odata.type": "#Microsoft.Skills.Util.DocumentIntelligenceLayoutSkill",
-      "name": "doc-layout-skill",
+      "@odata.type": "#Microsoft.Skills.Util.ContentUnderstandingSkill",
+      "name": "content-understanding-skill",
+      "description": "Uses Azure Content Understanding for structure-aware extraction AND built-in chunking with image extraction and location metadata.",
       "context": "/document",
-      "outputFormat": "text",
       "extractionOptions": ["images", "locationMetadata"],
+      "chunkingProperties": {
+        "unit": "characters",
+        "maximumLength": 2000,
+        "overlapLength": 200
+      },
       "inputs": [
         { "name": "file_data", "source": "/document/file_data" }
       ],
@@ -156,11 +163,11 @@ Authorization: Bearer {{adminToken}}
       "@odata.type": "#Microsoft.Skills.Custom.ChatCompletionSkill",
       "name": "image-verbalization-skill",
       "context": "/document/normalized_images/*",
-      "uri": "{{openAiEndpoint}}/openai/deployments/chat/chat/completions",
+      "uri": "{{aiFoundryEndpoint}}/openai/deployments/chat/chat/completions",
       "authIdentity": null,
       "inputs": [
         { "name": "image",         "source": "/document/normalized_images/*/data" },
-        { "name": "imageDetail",   "source": "=high" },
+        { "name": "imageDetail",   "source": "='high'" },
         { "name": "systemMessage", "source": "='You are a document analyst. Describe all text, charts, tables, diagrams, and meaningful visual elements in detail. Be concise but complete.'" },
         { "name": "userMessage",   "source": "='Describe the content of this image.'" }
       ],
@@ -174,7 +181,7 @@ Authorization: Bearer {{adminToken}}
       "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
       "name": "text-embedding-skill",
       "context": "/document/text_sections/*",
-      "resourceUri": "{{openAiEndpoint}}",
+      "resourceUri": "{{aiFoundryEndpoint}}",
       "deploymentId": "embeddings",
       "modelName": "text-embedding-3-large",
       "dimensions": 3072,
@@ -190,7 +197,7 @@ Authorization: Bearer {{adminToken}}
       "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
       "name": "image-embedding-skill",
       "context": "/document/normalized_images/*",
-      "resourceUri": "{{openAiEndpoint}}",
+      "resourceUri": "{{aiFoundryEndpoint}}",
       "deploymentId": "embeddings",
       "modelName": "text-embedding-3-large",
       "dimensions": 3072,
@@ -214,15 +221,7 @@ Authorization: Bearer {{adminToken}}
           { "name": "content_embedding","source": "/document/text_sections/*/content_embedding" },
           { "name": "content_path",     "source": "/document/metadata_storage_path" },
           { "name": "document_title",   "source": "/document/metadata_storage_name" },
-          {
-            "name": "location_metadata",
-            "source": null,
-            "sourceContext": "/document/text_sections/*",
-            "inputs": [
-              { "name": "page_number",       "source": "/document/text_sections/*/pageNumber" },
-              { "name": "bounding_polygons", "source": "/document/text_sections/*/boundingPolygons" }
-            ]
-          }
+          { "name": "location_metadata","source": "/document/text_sections/*/locationMetadata" }
         ]
       },
       {
@@ -234,15 +233,7 @@ Authorization: Bearer {{adminToken}}
           { "name": "content_embedding","source": "/document/normalized_images/*/content_embedding" },
           { "name": "content_path",     "source": "/document/normalized_images/*/storagePath" },
           { "name": "document_title",   "source": "/document/metadata_storage_name" },
-          {
-            "name": "location_metadata",
-            "source": null,
-            "sourceContext": "/document/normalized_images/*",
-            "inputs": [
-              { "name": "page_number",       "source": "/document/normalized_images/*/pageNumber" },
-              { "name": "bounding_polygons", "source": "/document/normalized_images/*/boundingPolygons" }
-            ]
-          }
+          { "name": "location_metadata","source": "/document/normalized_images/*/locationMetadata" }
         ]
       }
     ],

@@ -8,6 +8,8 @@ description: "Sub-agent — CI/CD pipelines, Docker, and Azure deployment for th
 
 Establish and manage CI/CD pipelines, containerization, and deployment for the Java application. You are a **sub-agent** that can be invoked by the AnalystAgent orchestrator or run independently.
 
+**Note**: For MCP Azure PDF Server deployment and infrastructure, use `@PdfMcpDevOpsAgent` instead.
+
 ## Skills
 
 Load from `.github/skills/` as needed:
