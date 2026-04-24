@@ -12,6 +12,9 @@ param customSubDomainName string = name
 param publicNetworkAccess string = 'Enabled'
 param disableLocalAuth bool = false
 
+@description('IP addresses to allow through the firewall (e.g. developer IP for local access)')
+param ipRules array = []
+
 param deployments array = []
 
 resource cognitiveServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
@@ -25,8 +28,11 @@ resource cognitiveServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
     publicNetworkAccess: publicNetworkAccess
     disableLocalAuth: disableLocalAuth
     networkAcls: {
-      defaultAction: 'Allow'
+      defaultAction: !empty(ipRules) ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
+      ipRules: [for ipRule in ipRules: {
+        value: ipRule
+      }]
     }
   }
 }

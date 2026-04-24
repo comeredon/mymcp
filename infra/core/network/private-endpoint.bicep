@@ -13,8 +13,8 @@ param groupId string
 @description('Resource ID of the subnet to place the private endpoint in.')
 param subnetId string
 
-@description('Resource ID of the private DNS zone to register the endpoint in.')
-param privateDnsZoneId string
+@description('Resource IDs of the private DNS zones to register the endpoint in (supports multiple zones, e.g. AI Foundry needs two).')
+param privateDnsZoneIds array
 
 resource privateEndpoint 'Microsoft.Network/privateEndpoints@2023-09-01' = {
   name: name
@@ -42,14 +42,12 @@ resource dnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
   parent: privateEndpoint
   name: 'default'
   properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: '${groupId}-config'
-        properties: {
-          privateDnsZoneId: privateDnsZoneId
-        }
+    privateDnsZoneConfigs: [for (zoneId, i) in privateDnsZoneIds: {
+      name: '${groupId}-config-${i}'
+      properties: {
+        privateDnsZoneId: zoneId
       }
-    ]
+    }]
   }
 }
 

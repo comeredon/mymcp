@@ -175,7 +175,7 @@ Authorization: Bearer {{adminToken}}
         { "name": "response", "targetName": "verbalized_text" }
       ],
       "responseFormat": { "type": "text" },
-      "commonModelParameters": { "temperature": 0.3, "maxTokens": 1024 }
+      "commonModelParameters": { "temperature": 0 }
     },
     {
       "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",

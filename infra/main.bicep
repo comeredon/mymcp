@@ -122,7 +122,9 @@ module storageAccount 'core/storage/storage-account.bicep' = {
     tags: tags
     containers: blobContainers
     allowSharedKeyAccess: false  // Security best practice from upstream
-    publicNetworkAccess: 'Enabled'
+    // When developer access is enabled, allow the developer IP through the firewall alongside the private endpoint
+    publicNetworkAccess: (deployVNet && !allowDeveloperAccess) ? 'Disabled' : 'Enabled'
+    ipRules: allowDeveloperAccess && !empty(developerIpAddress) ? [developerIpAddress] : []
   }
 }
 
@@ -136,6 +138,9 @@ module aiFoundry 'core/ai/cognitiveservices.bicep' = {
     kind: 'AIServices'
     customSubDomainName: 'aifs-${resourceToken}'
     disableLocalAuth: true  // MS security baseline: disable API key auth, enforce AAD-only
+    // When developer access is enabled, allow the developer IP through the firewall alongside the private endpoint
+    publicNetworkAccess: (deployVNet && !allowDeveloperAccess) ? 'Disabled' : 'Enabled'
+    ipRules: allowDeveloperAccess && !empty(developerIpAddress) ? [developerIpAddress] : []
     deployments: concat(
       aiFoundryConfig.deployEmbeddings ? [{
         name: 'embeddings'
@@ -269,7 +274,7 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
     subnets: [
       {
         name: 'container-apps'
-        addressPrefix: '10.0.0.0/23'
+        addressPrefix: '10.0.0.0/27'
         delegations: [
           {
             name: 'Microsoft.App.environments'
@@ -291,6 +296,14 @@ module vnet 'core/network/vnet.bicep' = if (deployVNet) {
       {
         name: 'sn-private-endpoint-ai-search'
         addressPrefix: '10.0.4.0/24'
+      }
+      {
+        name: 'sn-private-endpoint-storage'
+        addressPrefix: '10.0.5.0/24'
+      }
+      {
+        name: 'sn-private-endpoint-ai-foundry'
+        addressPrefix: '10.0.6.0/24'
       }
     ]
   }
@@ -475,7 +488,94 @@ module searchPrivateEndpoint 'core/network/private-endpoint.bicep' = if (deployV
     serviceId: searchService.outputs.id
     groupId: 'searchService'
     subnetId: vnet!.outputs.subnets[3].id  // search-pe subnet
-    privateDnsZoneId: searchPrivateDnsZone.id
+    privateDnsZoneIds: [searchPrivateDnsZone.id]
+  }
+}
+
+// Private DNS zone for Azure Storage (blob)
+resource storagePrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (deployVNet) {
+  name: 'privatelink.blob.core.windows.net'
+  location: 'global'
+  tags: tags
+}
+
+resource storagePrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (deployVNet) {
+  parent: storagePrivateDnsZone
+  name: 'storage-vnet-link-${resourceToken}'
+  location: 'global'
+  tags: tags
+  properties: {
+    virtualNetwork: {
+      id: vnet!.outputs.id
+    }
+    registrationEnabled: false
+  }
+}
+
+// Private endpoint for Azure Storage — placed in dedicated storage-pe subnet
+module storagePrivateEndpoint 'core/network/private-endpoint.bicep' = if (deployVNet) {
+  name: 'storage-private-endpoint'
+  params: {
+    name: '${abbrs.networkPrivateEndpoints}st-${resourceToken}'
+    location: location
+    tags: tags
+    serviceId: storageAccount.outputs.id
+    groupId: 'blob'
+    subnetId: vnet!.outputs.subnets[4].id  // storage-pe subnet
+    privateDnsZoneIds: [storagePrivateDnsZone.id]
+  }
+}
+
+// Private DNS zones for Azure AI Foundry (Cognitive Services needs both zones)
+resource aiFoundryPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (deployVNet) {
+  name: 'privatelink.cognitiveservices.azure.com'
+  location: 'global'
+  tags: tags
+}
+
+resource aiFoundryPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (deployVNet) {
+  parent: aiFoundryPrivateDnsZone
+  name: 'aifoundry-vnet-link-${resourceToken}'
+  location: 'global'
+  tags: tags
+  properties: {
+    virtualNetwork: {
+      id: vnet!.outputs.id
+    }
+    registrationEnabled: false
+  }
+}
+
+resource aiFoundryOpenAiPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (deployVNet) {
+  name: 'privatelink.openai.azure.com'
+  location: 'global'
+  tags: tags
+}
+
+resource aiFoundryOpenAiPrivateDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (deployVNet) {
+  parent: aiFoundryOpenAiPrivateDnsZone
+  name: 'aifoundry-openai-vnet-link-${resourceToken}'
+  location: 'global'
+  tags: tags
+  properties: {
+    virtualNetwork: {
+      id: vnet!.outputs.id
+    }
+    registrationEnabled: false
+  }
+}
+
+// Private endpoint for Azure AI Foundry — placed in dedicated ai-foundry-pe subnet
+module aiFoundryPrivateEndpoint 'core/network/private-endpoint.bicep' = if (deployVNet) {
+  name: 'ai-foundry-private-endpoint'
+  params: {
+    name: '${abbrs.networkPrivateEndpoints}aifs-${resourceToken}'
+    location: location
+    tags: tags
+    serviceId: aiFoundry.outputs.id
+    groupId: 'account'
+    subnetId: vnet!.outputs.subnets[5].id  // ai-foundry-pe subnet
+    privateDnsZoneIds: [aiFoundryPrivateDnsZone.id, aiFoundryOpenAiPrivateDnsZone.id]
   }
 }
 
