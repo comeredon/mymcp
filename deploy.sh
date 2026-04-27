@@ -15,6 +15,7 @@ DEPLOY_APIM="${DEPLOY_APIM:-true}"
 APIM_PUBLISHER_EMAIL="${APIM_PUBLISHER_EMAIL:-admin@contoso.com}"
 APIM_PUBLISHER_NAME="${APIM_PUBLISHER_NAME:-Contoso}"
 DEPLOY_VNET="${DEPLOY_VNET:-true}"
+ALLOW_DEV_ACCESS="${ALLOW_DEV_ACCESS:-false}"
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
         --apim-publisher-name)  APIM_PUBLISHER_NAME="$2"; shift 2 ;;
         --deploy-vnet)        DEPLOY_VNET=true; shift ;;
         --no-vnet)            DEPLOY_VNET=false; shift ;;
+        --dev-access)         ALLOW_DEV_ACCESS=true; shift ;;
         -h|--help)
             echo "Usage: $0 [options]"
             echo ""
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --apim-publisher-name NAME   APIM publisher name (default: Contoso)"
             echo "  --deploy-vnet                Deploy Virtual Network (default: enabled)"
             echo "  --no-vnet                    Skip Virtual Network deployment"
+            echo "  --dev-access                 Allow your IP on private resources (AI Search) for development"
             echo "  -h, --help                   Show this help message"
             return 0
             ;;
@@ -128,6 +131,18 @@ fi
 # Always pass APIM and VNet flags explicitly so Bicep gets the correct value
 deploy_params+=("--parameters" "deployApim=$DEPLOY_APIM")
 deploy_params+=("--parameters" "deployVNet=$DEPLOY_VNET")
+
+# Developer access: detect IP and pass to Bicep
+deploy_params+=("--parameters" "allowDeveloperAccess=$ALLOW_DEV_ACCESS")
+if [[ "$ALLOW_DEV_ACCESS" == "true" ]]; then
+    dev_ip=$(curl -s https://api.ipify.org 2>/dev/null || curl -s https://ifconfig.me 2>/dev/null || true)
+    if [[ -n "$dev_ip" ]]; then
+        echo "  Developer IP detected: $dev_ip"
+        deploy_params+=("--parameters" "developerIpAddress=$dev_ip")
+    else
+        echo "  ⚠️ Could not detect developer IP — skipping IP allowlist"
+    fi
+fi
 
 if [[ "$DEPLOY_APIM" == "true" ]]; then
     deploy_params+=("--parameters" "apimPublisherEmail=$APIM_PUBLISHER_EMAIL")

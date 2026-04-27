@@ -18,6 +18,9 @@ param publicNetworkAccess string = 'Disabled'
 @description('Virtual Network subnet IDs allowed to access storage')
 param allowedSubnetIds array = []
 
+@description('IP addresses to allow through the firewall (e.g. developer IP for local access)')
+param ipRules array = []
+
 param containers array = []
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -35,9 +38,13 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     publicNetworkAccess: publicNetworkAccess
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: !empty(allowedSubnetIds) ? 'Deny' : 'Allow'
+      defaultAction: (!empty(allowedSubnetIds) || !empty(ipRules)) ? 'Deny' : 'Allow'
       virtualNetworkRules: [for subnetId in allowedSubnetIds: {
         id: subnetId
+        action: 'Allow'
+      }]
+      ipRules: [for ipRule in ipRules: {
+        value: ipRule
         action: 'Allow'
       }]
     }

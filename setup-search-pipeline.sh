@@ -316,7 +316,7 @@ skillset_body=$(cat <<EOF
         { "name": "response", "targetName": "verbalized_image" }
       ],
       "responseFormat": { "type": "text" },
-      "commonModelParameters": { "temperature": 0, "maxTokens": 1024 }
+      "commonModelParameters": { "temperature": 0 }
     },
     {
       "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",

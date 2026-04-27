@@ -67,5 +67,14 @@ infra/main.json
 # PL/I translation reference materials (proprietary, not committed)
 translation/
 
+# PDF documents for testing (not committed)
+pdfdocs/
+
 # PL/I source code (proprietary, not committed)
 pli_src/
+
+# Java implementation (generated, not committed)
+java-implementation/
+
+# Test generation folder
+test-generate-folder/
