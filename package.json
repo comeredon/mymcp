@@ -10,10 +10,10 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@azure/identity": "^4.4.0",
+    "@azure/identity": "^4.13.1",
     "@azure/search-documents": "^12.0.0",
     "cors": "^2.8.5",
-    "express": "^4.22.1",
+    "express": "^5.2.1",
     "express-rate-limit": "^7.5.1",
     "helmet": "^8.1.0"
   },
